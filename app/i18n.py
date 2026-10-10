@@ -6,8 +6,6 @@ DEFAULT_LANG = "en"
 
 EN = {
     # 공통 / 레이아웃
-    "에어컨 설치 기록": "Aircon Install Records",
-    "설치 기록": "Install Records",
     "현장 목록": "Jobs",
     "+ 집 등록": "+ New property",
     "사용자": "Users",

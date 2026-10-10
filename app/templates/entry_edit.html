@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
-{% block title %}{{ _('{type} 수정', type=_(ENTRY_TYPES[entry.type])) }} · {{ _('에어컨 설치 기록') }}{% endblock %}
+{% block title %}{{ _('{type} 수정', type=_(ENTRY_TYPES[entry.type])) }} · {{ BRAND }}{% endblock %}
 {% block content %}
 <a class="back" href="/houses/{{ house.id }}#entry-{{ entry.id }}">← {{ house.address }}</a>
 <div class="page-head">

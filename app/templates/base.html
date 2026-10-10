@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{{ _('에어컨 설치 기록') }}{% endblock %}</title>
+  <title>{% block title %}{{ BRAND }}{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="{% if user %}with-sidebar{% endif %}">
@@ -20,7 +20,7 @@
   {% set cur_status = request.query_params.getlist('status') if path == '/houses' else [] %}
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
-      <a class="brand" href="/houses">❄ {{ _('설치 기록') }}</a>
+      <a class="brand" href="/houses">❄ {{ BRAND }}</a>
       <button type="button" class="menu-toggle" aria-controls="sidebar-body" aria-expanded="false" aria-label="{{ _('메뉴') }}">☰</button>
     </div>
 

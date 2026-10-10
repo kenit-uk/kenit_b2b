@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{{ _('로그인') }} · {{ _('에어컨 설치 기록') }}{% endblock %}
+{% block title %}{{ _('로그인') }} · {{ BRAND }}{% endblock %}
 {% block main_class %}auth{% endblock %}
 {% block content %}
 <div class="card auth-card">
-  <h1>❄ {{ _('에어컨 설치 기록') }}</h1>
+  <h1>❄ {{ BRAND }}</h1>
   <p class="muted">{{ _('직원·설치업자 전용') }}</p>
   {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
   <form method="post" action="/login" class="stack">

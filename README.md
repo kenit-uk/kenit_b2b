@@ -1,4 +1,4 @@
-# kenit_b2b
+# Kenit - Aircondition (kenit_b2b)
 
 런던 에어컨 설치 현장 기록 서비스입니다. 직원과 설치업자만 가입해서 씁니다. FastAPI + SQLite라 별도 DB 서버가 필요 없습니다.
 화면은 **한국어 / English**로 쓸 수 있습니다(상단에서 전환, 사용자별 저장).

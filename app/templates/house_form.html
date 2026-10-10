@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set editing = house and house.id %}
-{% block title %}{{ _('집 정보 수정') if editing else _('새 집 등록') }} · {{ _('에어컨 설치 기록') }}{% endblock %}
+{% block title %}{{ _('집 정보 수정') if editing else _('새 집 등록') }} · {{ BRAND }}{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>{{ _('집 정보 수정') if editing else _('새 집 등록') }}</h1>

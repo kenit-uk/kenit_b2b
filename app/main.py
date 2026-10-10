@@ -51,7 +51,7 @@ async def lifespan(_app):
     yield
 
 
-app = FastAPI(title="에어컨 설치 기록", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title=C.BRAND, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY,
@@ -102,6 +102,7 @@ templates.env.filters["localdt"] = fmt_local
 templates.env.filters["size"] = fmt_size
 templates.env.filters["fromjson"] = lambda s: json.loads(s) if s else {}
 templates.env.globals.update(
+    BRAND=C.BRAND,
     STATUSES=C.STATUSES,
     ROLES=C.ROLES,
     ENTRY_TYPES=C.ENTRY_TYPES,
