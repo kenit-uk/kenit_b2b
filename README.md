@@ -3,13 +3,15 @@
 런던 에어컨 설치 현장 기록 서비스입니다. 직원과 설치업자만 가입해서 씁니다. FastAPI + SQLite라 별도 DB 서버가 필요 없습니다.
 화면은 **한국어 / English**로 쓸 수 있습니다(상단에서 전환, 사용자별 저장).
 
-## 실행
+## 로컬 실행
 
 ```bash
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+.venv/bin/uvicorn app.main:app --port 8080
 ```
+
+브라우저에서 http://127.0.0.1:8080 을 엽니다. 로컬에서는 DB와 사진이 이 폴더의 `data/`, `uploads/`에 저장됩니다.
 
 처음 실행하면 터미널에 **직원용 / 설치업자용 초대코드**가 출력됩니다. 가입할 때 이 코드를 입력해야 하며, 어떤 코드를 넣었는지로 역할이 정해집니다.
 가입 후에는 직원이 `사용자` 메뉴에서 초대코드를 확인·재발급하고, 계정을 비활성화할 수 있습니다.
@@ -40,5 +42,38 @@ python3.12 -m venv .venv
 | `SECRET_KEY` | 자동 생성 (`data/.secret_key`) | 로그인 쿠키 서명 키 |
 | `COOKIE_SECURE` | 꺼짐 | HTTPS로 운영할 때 `1` |
 | `MAX_UPLOAD_MB` | `25` | 파일당 최대 크기 |
+| `S3_BUCKET` | 없음 | 설정하면 사진은 이 버킷에 저장하고 DB는 이 버킷으로 실시간 백업 |
+| `S3_ENDPOINT` | 없음 | R2: `https://<계정ID>.r2.cloudflarestorage.com` |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | 없음 | R2 API 토큰(Object Read & Write) |
+| `S3_REGION` | `auto` | R2는 `auto` |
 
-**백업**: `data/`와 `uploads/` 두 폴더만 백업하면 됩니다.
+## 배포와 데이터 보호
+
+`Dockerfile`로 배포합니다(Railway 등). 운영 환경에는 아래를 꼭 설정합니다.
+
+- 영구 디스크(Volume)를 `/data`에 연결
+- `S3_BUCKET`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (Cloudflare R2)
+- `SECRET_KEY`: 임의의 긴 문자열. 서버를 새로 만들어도 로그인이 유지됩니다.
+- `COOKIE_SECURE=1`
+
+이렇게 설정하면 데이터가 이렇게 보호됩니다.
+
+| 데이터 | 보호 방식 |
+|---|---|
+| 사진·첨부 | 서버가 아니라 R2에 바로 저장. 앱은 첨부를 지우지 않고 삭제 표시만 함 |
+| DB (기록 전체) | [Litestream](https://litestream.io)이 1초 간격으로 R2에 복제, 30일치 보관 |
+| 서버 디스크 유실 | 새 서버가 시작될 때 DB가 없으면 R2에서 자동 복구 |
+| 기록 수정·첨부 삭제 | 앱 안에서 이전 내용이 변경이력에 남음 |
+
+`S3_BUCKET` 없이 실행하면 시작할 때 백업이 꺼져 있다는 경고가 출력됩니다.
+
+### 특정 시점으로 되돌리기
+
+실수로 데이터가 잘못 바뀌었을 때 30일 안의 시점으로 되돌릴 수 있습니다. 서버 콘솔에서 실행합니다.
+
+```bash
+# 2026-10-10 09:00 (UTC) 시점의 DB를 별도 파일로 복구해 확인
+litestream restore -config /etc/litestream.yml -timestamp 2026-10-10T09:00:00Z -o /data/db/restored.db /data/db/app.db
+```
+
+확인한 뒤 앱을 멈추고 `restored.db`를 `app.db` 자리에 놓고 다시 시작합니다.

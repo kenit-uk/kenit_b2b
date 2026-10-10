@@ -1,0 +1,16 @@
+# DB(SQLite)를 S3 호환 저장소에 1초 간격으로 복제한다.
+# 30일치 스냅샷과 변경분을 보관하므로 그 기간 안의 어느 시점으로든 되돌릴 수 있다.
+dbs:
+  - path: ${DATA_DIR}/app.db
+    replicas:
+      - type: s3
+        bucket: ${S3_BUCKET}
+        path: litestream/app.db
+        endpoint: ${S3_ENDPOINT}
+        region: ${S3_REGION}
+        access-key-id: ${S3_ACCESS_KEY_ID}
+        secret-access-key: ${S3_SECRET_ACCESS_KEY}
+        force-path-style: true
+        sync-interval: 1s
+        snapshot-interval: 24h
+        retention: 720h

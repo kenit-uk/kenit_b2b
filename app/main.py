@@ -3,6 +3,7 @@ import json
 import mimetypes
 import secrets
 import sqlite3
+import tempfile
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -10,18 +11,20 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
+from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 from starlette.exceptions import HTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import constants as C
 from .auth import Forbidden, LoginRequired, current_user, hash_password, staff_user, verify_password
-from .config import COOKIE_SECURE, MAX_UPLOAD_BYTES, SECRET_KEY, UPLOAD_DIR
+from .config import COOKIE_SECURE, MAX_UPLOAD_BYTES, SECRET_KEY
 from .db import audit, get_db, get_setting, init_db, now, set_setting
+from .storage import storage
 from .i18n import LANGS, detect_lang, fmt_datetime, translate, translate_message
 
 APP_DIR = Path(__file__).resolve().parent
@@ -219,10 +222,8 @@ def entry_fields(entry_type: str, form) -> dict:
 
 
 async def save_uploads(files: list, house_id: int) -> list[dict]:
-    """업로드 파일을 디스크에 저장. 하나라도 문제가 있으면 저장한 파일을 지우고 UserError."""
+    """업로드 파일을 저장소에 저장. 하나라도 문제가 있으면 이번에 저장한 파일을 정리하고 UserError."""
     saved: list[dict] = []
-    target_dir = UPLOAD_DIR / str(house_id)
-    target_dir.mkdir(parents=True, exist_ok=True)
     try:
         for f in files:
             if not isinstance(f, UploadFile) or not f.filename:
@@ -233,19 +234,18 @@ async def save_uploads(files: list, house_id: int) -> list[dict]:
                 if guessed not in ALLOWED_UPLOADS:
                     raise UserError("'{name}' 형식은 올릴 수 없습니다. (사진, 동영상, PDF만 가능)", name=f.filename)
                 mime = guessed
-            stored_name = f"{uuid.uuid4().hex}{ALLOWED_UPLOADS[mime]}"
-            path = target_dir / stored_name
-            size = 0
-            with path.open("wb") as out:
-                saved.append({"path": path, "stored_name": f"{house_id}/{stored_name}",
-                              "original_name": f.filename[:200], "mime": mime, "size": 0})
+            with tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024) as tmp:
+                size = 0
                 while chunk := await f.read(1024 * 1024):
                     size += len(chunk)
                     if size > MAX_UPLOAD_BYTES:
                         raise UserError("'{name}' 파일이 너무 큽니다. (최대 {mb}MB)",
                                         name=f.filename, mb=MAX_UPLOAD_BYTES // 1024 // 1024)
-                    out.write(chunk)
-            saved[-1]["size"] = size
+                    tmp.write(chunk)
+                tmp.seek(0)
+                key = f"{house_id}/{uuid.uuid4().hex}{ALLOWED_UPLOADS[mime]}"
+                await run_in_threadpool(storage.put, key, tmp, mime)
+            saved.append({"stored_name": key, "original_name": f.filename[:200], "mime": mime, "size": size})
     except Exception:
         remove_files(saved)
         raise
@@ -253,8 +253,12 @@ async def save_uploads(files: list, house_id: int) -> list[dict]:
 
 
 def remove_files(saved: list[dict]) -> None:
+    """DB에 연결되지 못한(저장 실패한) 업로드만 정리한다."""
     for s in saved:
-        s["path"].unlink(missing_ok=True)
+        try:
+            storage.discard(s["stored_name"])
+        except Exception:
+            pass
 
 
 def insert_attachments(conn, saved: list[dict], entry_id: int, house_id: int, user_id: int, ts: str) -> None:
@@ -700,14 +704,7 @@ def file_download(file_id: int, download: int = 0, user=Depends(current_user), c
     # 삭제 표시된 파일은 직원만 열람 가능(기록 확인용)
     if not f or f["entry_type"] not in readable_types(user) or (f["deleted_at"] and user["role"] != "staff"):
         raise HTTPException(404)
-    path = (UPLOAD_DIR / f["stored_name"]).resolve()
-    if UPLOAD_DIR.resolve() not in path.parents or not path.exists():
-        raise HTTPException(404)
-    return FileResponse(
-        path, media_type=f["mime"], filename=f["original_name"],
-        content_disposition_type="attachment" if download else "inline",
-        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=86400"},
-    )
+    return storage.response(f["stored_name"], f["mime"], f["original_name"], bool(download))
 
 
 # ---------- 사용자 관리 (직원) ----------
