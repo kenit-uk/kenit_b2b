@@ -25,6 +25,7 @@ def content_disposition(filename: str, download: bool) -> str:
 
 class LocalStorage:
     name = "local"
+    direct = False  # 브라우저 → 저장소 직접 업로드 미지원(파일이 앱 서버를 거쳐 저장됨)
 
     def put(self, key: str, fileobj, mime: str) -> None:
         path = self._path(key)
@@ -56,6 +57,7 @@ class LocalStorage:
 
 class S3Storage:
     name = "s3"
+    direct = True  # 브라우저가 서명된 주소로 저장소에 바로 올린다(서버리스 요청 크기 제한 회피)
 
     def __init__(self):
         import boto3
@@ -77,6 +79,22 @@ class S3Storage:
 
     def discard(self, key: str) -> None:
         self.client.delete_object(Bucket=self.bucket, Key=UPLOAD_PREFIX + key)
+
+    def presign_put(self, key: str, mime: str) -> str:
+        return self.client.generate_presigned_url(
+            "put_object", Params={"Bucket": self.bucket, "Key": UPLOAD_PREFIX + key, "ContentType": mime},
+            ExpiresIn=900,
+        )
+
+    def head(self, key: str):
+        """업로드된 파일의 (크기, 형식). 없으면 None."""
+        from botocore.exceptions import ClientError
+
+        try:
+            r = self.client.head_object(Bucket=self.bucket, Key=UPLOAD_PREFIX + key)
+        except ClientError:
+            return None
+        return r["ContentLength"], (r.get("ContentType") or "").lower()
 
     def response(self, key: str, mime: str, filename: str, download: bool):
         # 파일은 저장소에서 바로 내려받게 한다(앱 서버를 거치지 않아 빠르고 전송 비용도 들지 않는다).

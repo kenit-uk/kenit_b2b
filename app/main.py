@@ -1,8 +1,8 @@
 import hmac
 import json
 import mimetypes
+import re
 import secrets
-import sqlite3
 import tempfile
 import uuid
 from contextlib import asynccontextmanager
@@ -11,7 +11,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
@@ -22,8 +22,8 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import constants as C
 from .auth import Forbidden, LoginRequired, current_user, hash_password, staff_user, verify_password
-from .config import COOKIE_SECURE, MAX_UPLOAD_BYTES, SECRET_KEY
-from .db import audit, connect, get_db, get_setting, init_db, now, set_setting
+from .config import COOKIE_SECURE, DATABASE_URL, MAX_UPLOAD_BYTES, ON_VERCEL, SECRET_KEY
+from .db import IntegrityError, audit, connect, ensure_db, get_db, get_setting, now, set_setting
 from .storage import storage
 from .i18n import LANGS, detect_lang, fmt_datetime, translate, translate_message
 
@@ -45,9 +45,7 @@ ALLOWED_UPLOADS = {
 
 @asynccontextmanager
 async def lifespan(_app):
-    created = init_db()
-    for role, code in created.items():
-        print(f"[초기 설정 / Setup] {C.ROLES[role]} ({role}) 초대코드 / invite code: {code}")
+    ensure_db()
     yield
 
 
@@ -110,6 +108,9 @@ templates.env.globals.update(
     CONVERSATION_CHANNELS=C.CONVERSATION_CHANNELS,
     AUDIT_ACTIONS=C.AUDIT_ACTIONS,
     HOUSE_LABELS=C.HOUSE_LABELS,
+    DIRECT_UPLOAD=storage.direct,
+    # 서버리스에서 DB나 사진 저장소가 연결되지 않으면 데이터가 사라지므로 화면에 경고를 띄운다
+    EPHEMERAL=ON_VERCEL and not (DATABASE_URL and storage.direct),
 )
 
 
@@ -129,11 +130,15 @@ def render(request: Request, name: str, user=None, status_code: int = 200, **ctx
         ctx["message"] = _(ctx["message"])
     here = request.url.path + (f"?{request.url.query}" if request.url.query else "")
     if user is not None and "unread_total" not in ctx:
-        db = connect()
-        try:
+        db = getattr(request.state, "db", None)
+        if db is not None:
             ctx["unread_total"] = unread_count(db, user)
-        finally:
-            db.close()
+        else:
+            db = connect()
+            try:
+                ctx["unread_total"] = unread_count(db, user)
+            finally:
+                db.close()
     return templates.TemplateResponse(
         request, name,
         {"user": user, "flashes": flashes, "lang": lang, "_": _, "LANGS": LANGS, "here": here, **ctx},
@@ -199,7 +204,7 @@ def unread_condition(user) -> tuple[str, list]:
 
 def unread_count(conn, user) -> int:
     sql, params = unread_condition(user)
-    return conn.execute(f"SELECT COUNT(*) FROM houses h WHERE {sql}", params).fetchone()[0]
+    return conn.execute(f"SELECT COUNT(*) AS n FROM houses h WHERE {sql}", params).fetchone()["n"]
 
 
 def get_house_or_404(conn, house_id: int):
@@ -272,6 +277,38 @@ async def save_uploads(files: list, house_id: int) -> list[dict]:
     except Exception:
         remove_files(saved)
         raise
+    return saved
+
+
+async def collect_direct_uploads(conn, raw: str, house_id: int) -> list[dict]:
+    """브라우저가 저장소에 직접 올린 파일을 확인한다. 실제로 올라갔는지, 형식·크기가 맞는지 저장소에서 다시 본다."""
+    if not raw or not storage.direct:
+        return []
+    try:
+        items = json.loads(raw)
+        assert isinstance(items, list)
+    except Exception:
+        raise UserError("업로드 정보가 올바르지 않습니다. 다시 시도하세요.")
+    saved = []
+    for it in items[:50]:
+        key = str(it.get("key", "")) if isinstance(it, dict) else ""
+        name = (str(it.get("name") or "file") if isinstance(it, dict) else "file")[:200]
+        m = re.fullmatch(rf"{house_id}/[0-9a-f]{{32}}(\.[a-z0-9]+)", key)
+        if not m:
+            raise UserError("업로드 정보가 올바르지 않습니다. 다시 시도하세요.")
+        if conn.execute("SELECT 1 FROM attachments WHERE stored_name = ?", (key,)).fetchone():
+            raise UserError("업로드 정보가 올바르지 않습니다. 다시 시도하세요.")
+        info = await run_in_threadpool(storage.head, key)
+        if not info:
+            raise UserError("'{name}' 업로드가 끝나지 않았습니다. 다시 시도하세요.", name=name)
+        size, mime = info
+        if ALLOWED_UPLOADS.get(mime) != m.group(1):
+            await run_in_threadpool(storage.discard, key)
+            raise UserError("'{name}' 형식은 올릴 수 없습니다. (사진, 동영상, PDF만 가능)", name=name)
+        if size > MAX_UPLOAD_BYTES:
+            await run_in_threadpool(storage.discard, key)
+            raise UserError("'{name}' 파일이 너무 큽니다. (최대 {mb}MB)", name=name, mb=MAX_UPLOAD_BYTES // 1024 // 1024)
+        saved.append({"stored_name": key, "original_name": name, "mime": mime, "size": size})
     return saved
 
 
@@ -390,16 +427,16 @@ async def signup(request: Request, conn=Depends(get_db)):
     lang = detect_lang(request)
     try:
         with conn:
-            cur = conn.execute(
+            new_id = conn.insert(
                 """INSERT INTO users (email, name, phone, password_hash, role, lang, seen_baseline, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(id), 0) FROM audit_log), ?)""",
                 (data["email"], data["name"], data["phone"], hash_password(password), role, lang, now()),
             )
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return render(request, "signup.html", form=data, error="이미 가입된 이메일입니다.", status_code=400)
 
     request.session.clear()
-    request.session.update(user_id=cur.lastrowid, lang=lang)
+    request.session.update(user_id=new_id, lang=lang)
     flash(request, "{role} 계정으로 가입되었습니다.", role=C.ROLES[role])
     return redirect("/houses")
 
@@ -410,7 +447,7 @@ SORTS = {
     "activity": ("최근 활동순", "last_activity_id DESC"),
     "created": ("최근 등록순", "h.created_at DESC"),
     "oldest": ("오래된 등록순", "h.created_at ASC"),
-    "address": ("주소순", "h.address COLLATE NOCASE ASC"),
+    "address": ("주소순", "LOWER(h.address) ASC"),
 }
 
 
@@ -430,7 +467,7 @@ def house_list(request: Request, user=Depends(current_user), conn=Depends(get_db
         if user["role"] == "staff":
             cols += ["h.landlord_phone", "h.landlord_email"]
         # 우편번호는 공백 없이 입력해도 찾을 수 있게 (예: SW1A1AA)
-        where.append("(" + " OR ".join(f"{c} LIKE ?" for c in cols) + " OR REPLACE(h.postcode, ' ', '') LIKE ?)")
+        where.append("(" + " OR ".join(f"{c} {conn.like} ?" for c in cols) + f" OR REPLACE(h.postcode, ' ', '') {conn.like} ?)")
         params += [like] * len(cols) + [f"%{f['q'].replace(' ', '')}%"]
     if f["status"]:
         where.append(f"h.status IN ({','.join('?' * len(f['status']))})")
@@ -445,7 +482,7 @@ def house_list(request: Request, user=Depends(current_user), conn=Depends(get_db
               FROM houses h WHERE {" AND ".join(where)}
               ORDER BY {SORTS[f["sort"]][1]}, h.id DESC"""
     houses = conn.execute(sql, unread_params + params).fetchall()
-    counts = dict(conn.execute("SELECT status, COUNT(*) FROM houses GROUP BY status").fetchall())
+    counts = {r["status"]: r["n"] for r in conn.execute("SELECT status, COUNT(*) AS n FROM houses GROUP BY status")}
     filtered = bool(f["q"] or f["status"])
     return render(request, "houses.html", user=user, houses=houses, counts=counts, total=sum(counts.values()),
                   f=f, sorts=SORTS, filtered=filtered)
@@ -468,14 +505,14 @@ async def house_create(request: Request, user=Depends(staff_user), conn=Depends(
         return render(request, "house_form.html", user=user, house=data, error="주소를 입력하세요.", status_code=400)
     ts = now()
     with conn:
-        cur = conn.execute(
+        house_id = conn.insert(
             f"""INSERT INTO houses ({", ".join(HOUSE_KEYS)}, status, created_by, created_at, updated_by, updated_at)
                 VALUES ({", ".join("?" * len(HOUSE_KEYS))}, ?, ?, ?, ?, ?)""",
             (*data.values(), C.STATUSES[0], user["id"], ts, user["id"], ts),
         )
-        audit(conn, house_id=cur.lastrowid, actor_id=user["id"], action="house_create", detail=data["address"])
+        audit(conn, house_id=house_id, actor_id=user["id"], action="house_create", detail=data["address"])
     flash(request, "집이 등록되었습니다. 설치업자가 현장정보를 올릴 수 있습니다.")
-    return redirect(f"/houses/{cur.lastrowid}")
+    return redirect(f"/houses/{house_id}")
 
 
 @app.get("/houses/{house_id}")
@@ -535,7 +572,9 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
         conn.execute(
             """INSERT INTO house_views (user_id, house_id, last_seen_id)
                VALUES (?, ?, (SELECT COALESCE(MAX(id), 0) FROM audit_log WHERE house_id = ?))
-               ON CONFLICT(user_id, house_id) DO UPDATE SET last_seen_id = MAX(last_seen_id, excluded.last_seen_id)""",
+               ON CONFLICT(user_id, house_id) DO UPDATE SET last_seen_id = CASE
+                 WHEN excluded.last_seen_id > house_views.last_seen_id THEN excluded.last_seen_id
+                 ELSE house_views.last_seen_id END""",
             (user["id"], house_id, house_id),
         )
 
@@ -610,11 +649,13 @@ async def entry_create(request: Request, house_id: int, entry_type: str,
     body = form_str(form, "body", 20000)
     uploads = form.getlist("files")
 
-    if not body and not any(fields.values()) and not any(getattr(f, "filename", "") for f in uploads):
+    if not body and not any(fields.values()) and not any(getattr(f, "filename", "") for f in uploads) \
+            and not form_str(form, "uploaded", 100000).strip("[] "):
         flash(request, "내용을 입력하거나 파일을 첨부하세요.", "error")
         return redirect(f"/houses/{house_id}?tab={entry_type}#new")
     try:
         saved = await save_uploads(uploads, house_id)
+        saved += await collect_direct_uploads(conn, form_str(form, "uploaded", 100000), house_id)
     except UserError as e:
         flash(request, e.key, "error", **e.args_)
         return redirect(f"/houses/{house_id}?tab={entry_type}#new")
@@ -622,19 +663,45 @@ async def entry_create(request: Request, house_id: int, entry_type: str,
     ts = now()
     try:
         with conn:
-            cur = conn.execute(
+            entry_id = conn.insert(
                 """INSERT INTO entries (house_id, type, author_id, fields, body, created_at, updated_by, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (house_id, entry_type, user["id"], json.dumps(fields, ensure_ascii=False), body, ts, user["id"], ts),
             )
-            insert_attachments(conn, saved, cur.lastrowid, house_id, user["id"], ts)
-            audit(conn, house_id=house_id, entry_id=cur.lastrowid, actor_id=user["id"], action="entry_create",
+            insert_attachments(conn, saved, entry_id, house_id, user["id"], ts)
+            audit(conn, house_id=house_id, entry_id=entry_id, actor_id=user["id"], action="entry_create",
                   detail=str(len(saved)))
     except Exception:
         remove_files(saved)
         raise
     flash(request, "{type} 기록이 저장되었습니다.", type=C.ENTRY_TYPES[entry_type])
-    return redirect(f"/houses/{house_id}#entry-{cur.lastrowid}")
+    return redirect(f"/houses/{house_id}#entry-{entry_id}")
+
+
+@app.post("/houses/{house_id}/uploads")
+async def upload_urls(request: Request, house_id: int, user=Depends(current_user), conn=Depends(get_db)):
+    """브라우저가 저장소(R2)에 사진을 바로 올릴 수 있는 1회용 주소를 발급한다."""
+    if not storage.direct:
+        raise HTTPException(404)
+    get_house_or_404(conn, house_id)
+    lang = detect_lang(request)
+    try:
+        files = (await request.json()).get("files")
+        assert isinstance(files, list) and 0 < len(files) <= 50
+    except Exception:
+        return JSONResponse({"error": translate(lang, "업로드 정보가 올바르지 않습니다. 다시 시도하세요.")}, 400)
+    out = []
+    for f in files:
+        name = str(f.get("name") or "file")[:200]
+        mime = str(f.get("type") or "").lower() or (mimetypes.guess_type(name)[0] or "")
+        if mime not in ALLOWED_UPLOADS:
+            return JSONResponse({"error": translate(lang, "'{name}' 형식은 올릴 수 없습니다. (사진, 동영상, PDF만 가능)", name=name)}, 400)
+        if int(f.get("size") or 0) > MAX_UPLOAD_BYTES:
+            return JSONResponse({"error": translate(lang, "'{name}' 파일이 너무 큽니다. (최대 {mb}MB)",
+                                                    name=name, mb=MAX_UPLOAD_BYTES // 1024 // 1024)}, 400)
+        key = f"{house_id}/{uuid.uuid4().hex}{ALLOWED_UPLOADS[mime]}"
+        out.append({"key": key, "type": mime, "url": await run_in_threadpool(storage.presign_put, key, mime)})
+    return {"uploads": out}
 
 
 @app.get("/entries/{entry_id}/edit")
@@ -669,6 +736,7 @@ async def entry_edit(request: Request, entry_id: int, user=Depends(current_user)
 
     try:
         saved = await save_uploads(form.getlist("files"), entry["house_id"])
+        saved += await collect_direct_uploads(conn, form_str(form, "uploaded", 100000), entry["house_id"])
     except UserError as e:
         return render_entry_edit(request, conn, user, entry, error=e, status_code=400)
 

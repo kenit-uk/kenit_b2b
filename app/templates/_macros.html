@@ -100,12 +100,20 @@
   {% endif %}
 {% endmacro %}
 
+{# 첨부 입력. 폼에는 data-upload, data-direct, data-upload-url 속성을 함께 단다 (static/upload.js) #}
 {% macro file_input() %}
   <label class="file-drop">
     {{ _('📎 사진·동영상·PDF 첨부 (여러 개 선택 가능)') }}
-    <input type="file" name="files" multiple accept="image/*,video/mp4,video/quicktime,application/pdf">
+    <input type="file" name="files" multiple accept="image/*,video/mp4,video/quicktime,application/pdf"
+           data-compressing="{{ _('사진 압축 중…') }}" data-uploading="{{ _('업로드 중 {i}/{n}') }}"
+           data-saving="{{ _('저장 중…') }}" data-failed="{{ _('업로드에 실패했습니다. 인터넷 연결을 확인하고 다시 시도하세요.') }}">
   </label>
+  <input type="hidden" name="uploaded" value="">
 {% endmacro %}
+
+{% macro upload_attrs(house_id) -%}
+data-upload data-direct="{{ 1 if DIRECT_UPLOAD else 0 }}" data-upload-url="/houses/{{ house_id }}/uploads"
+{%- endmacro %}
 
 {% macro history_table(rows, entry_type=None, new_ids=()) %}
   <table class="history">

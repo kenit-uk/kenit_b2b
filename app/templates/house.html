@@ -55,7 +55,7 @@
   </div>
   {% for t in writable %}
     <form id="form-{{ t }}" class="stack entry-form {% if t != open_form %}hidden{% endif %}"
-          method="post" action="/houses/{{ house.id }}/entries/{{ t }}" enctype="multipart/form-data">
+          method="post" action="/houses/{{ house.id }}/entries/{{ t }}" enctype="multipart/form-data" {{ m.upload_attrs(house.id) }}>
       {{ m.entry_inputs(t) }}
       {{ m.file_input() }}
       <button class="btn primary">{{ _('{type} 저장', type=_(ENTRY_TYPES[t])) }}</button>
@@ -124,9 +124,6 @@
     document.querySelectorAll('#new .tab').forEach(b => b.classList.toggle('active', b === btn));
     document.querySelectorAll('#new .entry-form').forEach(f => f.classList.toggle('hidden', f.id !== btn.dataset.target));
   }));
-  // 업로드 중 중복 제출 방지
-  document.querySelectorAll('form[enctype]').forEach(f => f.addEventListener('submit', () => {
-    const b = f.querySelector('button.primary'); if (b) { b.disabled = true; b.textContent = {{ _('저장 중…')|tojson }}; }
-  }));
 </script>
+<script src="/static/upload.js"></script>
 {% endblock %}

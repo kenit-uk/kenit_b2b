@@ -12,7 +12,7 @@
 </p>
 {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
 
-<form class="card stack" method="post" action="/entries/{{ entry.id }}/edit" enctype="multipart/form-data">
+<form class="card stack" method="post" action="/entries/{{ entry.id }}/edit" enctype="multipart/form-data" {{ m.upload_attrs(house.id) }}>
   {% set v = entry.fields|fromjson %}
   {{ m.entry_inputs(entry.type, dict(v, body=entry.body)) }}
   {% if files %}
@@ -36,9 +36,5 @@
   {{ m.history_table(revisions, entry.type) }}
 </section>
 {% endif %}
-<script>
-  document.querySelector('form[enctype]').addEventListener('submit', e => {
-    const b = e.target.querySelector('button.primary'); b.disabled = true; b.textContent = {{ _('저장 중…')|tojson }};
-  });
-</script>
+<script src="/static/upload.js"></script>
 {% endblock %}

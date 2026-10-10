@@ -11,6 +11,7 @@ EN = {
     "사용자": "Users",
     "로그아웃": "Log out",
     "메뉴": "Menu",
+    "테스트 모드: DB 또는 사진 저장소가 연결되지 않아 입력한 내용이 사라질 수 있습니다.": "Test mode: no database or photo storage connected. Anything you enter may be lost.",
     "확인하지 않은 새 소식": "New since your last visit",
     "확인하지 않은 현장": "Jobs with unseen updates",
     "마지막으로 확인한 뒤 새 소식 {n}건": "{n} new update(s) since your last visit",
@@ -186,6 +187,11 @@ EN = {
     "📎 사진·동영상·PDF 첨부 (여러 개 선택 가능)": "📎 Attach photos, videos or PDFs (multiple allowed)",
     "'{name}' 형식은 올릴 수 없습니다. (사진, 동영상, PDF만 가능)": "'{name}' can't be uploaded. (Photos, videos and PDFs only)",
     "'{name}' 파일이 너무 큽니다. (최대 {mb}MB)": "'{name}' is too large. (Max {mb}MB)",
+    "업로드 정보가 올바르지 않습니다. 다시 시도하세요.": "Upload information is invalid. Please try again.",
+    "'{name}' 업로드가 끝나지 않았습니다. 다시 시도하세요.": "'{name}' did not finish uploading. Please try again.",
+    "사진 압축 중…": "Compressing photos…",
+    "업로드 중 {i}/{n}": "Uploading {i}/{n}",
+    "업로드에 실패했습니다. 인터넷 연결을 확인하고 다시 시도하세요.": "Upload failed. Check your connection and try again.",
 
     # 기록 수정
     "{type} 수정": "Edit {type}",
