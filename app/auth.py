@@ -4,6 +4,7 @@ import secrets
 
 from fastapi import Depends, Request
 
+from .constants import ADMIN_ROLES, OFFICE_ROLES
 from .db import get_db
 
 
@@ -41,7 +42,15 @@ def current_user(request: Request, conn=Depends(get_db)):
     return user
 
 
-def staff_user(user=Depends(current_user)):
-    if user["role"] != "staff":
+def office_user(user=Depends(current_user)):
+    """관리자·매니저: 집 등록, 상태 변경 등 현장 업무."""
+    if user["role"] not in OFFICE_ROLES:
+        raise Forbidden()
+    return user
+
+
+def admin_user(user=Depends(current_user)):
+    """관리자만: 사용자·초대코드·역할 관리."""
+    if user["role"] not in ADMIN_ROLES:
         raise Forbidden()
     return user

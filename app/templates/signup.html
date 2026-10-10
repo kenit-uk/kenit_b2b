@@ -4,7 +4,7 @@
 {% block content %}
 <div class="card auth-card">
   <h1>{{ _('가입하기') }}</h1>
-  <p class="muted">{{ _('관리자에게 받은 초대코드가 있어야 가입할 수 있습니다.') }}<br>{{ _('초대코드에 따라 관리자/설치업자 계정이 정해집니다.') }}</p>
+  <p class="muted">{{ _('관리자에게 받은 초대코드가 있어야 가입할 수 있습니다.') }}<br>{{ _('초대코드에 따라 관리자/매니저/설치업자 계정이 정해집니다.') }}</p>
   {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
   <form method="post" action="/signup" class="stack">
     <label>{{ _('초대코드') }} <input name="invite_code" value="{{ form.invite_code or '' }}" required autocomplete="off"></label>

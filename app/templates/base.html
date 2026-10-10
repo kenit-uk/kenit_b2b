@@ -28,7 +28,7 @@
         <a class="{% if path.startswith('/houses') %}active{% endif %}" href="/houses">📋 {{ _('현장 목록') }}{% if unread_total %}<span class="count" title="{{ _('확인하지 않은 현장') }}">{{ unread_total }}</span>{% endif %}</a>
       </nav>
 
-      {% if user.role == 'staff' %}
+      {% if is_admin %}
         <div class="side-section">{{ _('관리') }}</div>
         <nav class="side-nav">
           <a class="{% if path == '/users' %}active{% endif %}" href="/users">👥 {{ _('사용자 관리') }}</a>

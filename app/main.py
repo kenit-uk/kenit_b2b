@@ -21,7 +21,7 @@ from starlette.exceptions import HTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import constants as C
-from .auth import Forbidden, LoginRequired, current_user, hash_password, staff_user, verify_password
+from .auth import Forbidden, LoginRequired, admin_user, current_user, hash_password, office_user, verify_password
 from .config import COOKIE_SECURE, DATABASE_URL, MAX_UPLOAD_BYTES, ON_VERCEL, SECRET_KEY
 from .db import IntegrityError, audit, connect, ensure_db, get_db, get_setting, now, set_setting
 from .storage import storage
@@ -144,7 +144,9 @@ def render(request: Request, name: str, user=None, status_code: int = 200, **ctx
                 db.close()
     return templates.TemplateResponse(
         request, name,
-        {"user": user, "flashes": flashes, "lang": lang, "_": _, "LANGS": LANGS, "here": here, **ctx},
+        {"user": user, "flashes": flashes, "lang": lang, "_": _, "LANGS": LANGS, "here": here,
+         "is_admin": bool(user) and user["role"] in C.ADMIN_ROLES,
+         "is_office": bool(user) and user["role"] in C.OFFICE_ROLES, **ctx},
         status_code=status_code,
     )
 
@@ -191,7 +193,8 @@ def can_write(user, entry_type: str) -> bool:
 def can_edit(user, entry) -> bool:
     if entry["author_id"] == user["id"]:
         return True
-    return user["role"] == "staff" and entry["type"] in ("quote", "conversation")
+    # 다른 사람이 쓴 견적·집주인 대화는 관리자만 고칠 수 있다 (매니저는 본인 것만)
+    return user["role"] in C.ADMIN_ROLES and entry["type"] in ("quote", "conversation")
 
 
 def unread_condition(user) -> tuple[str, list]:
@@ -412,7 +415,7 @@ async def signup(request: Request, conn=Depends(get_db)):
     password = form.get("password") or ""
 
     role = None
-    for r in ("staff", "installer"):
+    for r in C.ROLES:
         code = get_setting(conn, f"invite_code_{r}")
         if code and data["invite_code"] and hmac.compare_digest(code, data["invite_code"]):
             role = r
@@ -469,7 +472,7 @@ def house_list(request: Request, user=Depends(current_user), conn=Depends(get_db
     if f["q"]:
         like = f"%{f['q']}%"
         cols = ["h.address", "h.postcode", "h.landlord_name", "h.memo"]
-        if user["role"] == "staff":
+        if user["role"] in C.OFFICE_ROLES:
             cols += ["h.landlord_phone", "h.landlord_email"]
         # 우편번호는 공백 없이 입력해도 찾을 수 있게 (예: SW1A1AA)
         where.append("(" + " OR ".join(f"{c} {conn.like} ?" for c in cols) + f" OR REPLACE(h.postcode, ' ', '') {conn.like} ?)")
@@ -494,7 +497,7 @@ def house_list(request: Request, user=Depends(current_user), conn=Depends(get_db
 
 
 @app.get("/houses/new")
-def house_new_page(request: Request, user=Depends(staff_user)):
+def house_new_page(request: Request, user=Depends(office_user)):
     return render(request, "house_form.html", user=user, house=None)
 
 
@@ -502,7 +505,7 @@ HOUSE_KEYS = ("address", "postcode", "landlord_name", "landlord_phone", "landlor
 
 
 @app.post("/houses/new")
-async def house_create(request: Request, user=Depends(staff_user), conn=Depends(get_db)):
+async def house_create(request: Request, user=Depends(office_user), conn=Depends(get_db)):
     form = await request.form()
     data = {k: form_str(form, k) for k in HOUSE_KEYS}
     data["postcode"] = data["postcode"].upper()
@@ -594,12 +597,12 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
 
 
 @app.get("/houses/{house_id}/edit")
-def house_edit_page(request: Request, house_id: int, user=Depends(staff_user), conn=Depends(get_db)):
+def house_edit_page(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
     return render(request, "house_form.html", user=user, house=get_house_or_404(conn, house_id))
 
 
 @app.post("/houses/{house_id}/edit")
-async def house_edit(request: Request, house_id: int, user=Depends(staff_user), conn=Depends(get_db)):
+async def house_edit(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
     house = get_house_or_404(conn, house_id)
     form = await request.form()
     data = {k: form_str(form, k) for k in HOUSE_KEYS}
@@ -622,7 +625,7 @@ async def house_edit(request: Request, house_id: int, user=Depends(staff_user), 
 
 
 @app.post("/houses/{house_id}/status")
-async def house_status(request: Request, house_id: int, user=Depends(staff_user), conn=Depends(get_db)):
+async def house_status(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
     house = get_house_or_404(conn, house_id)
     form = await request.form()
     new_status = form_str(form, "status")
@@ -789,7 +792,7 @@ def file_download(file_id: int, download: int = 0, user=Depends(current_user), c
         (file_id,),
     ).fetchone()
     # 삭제 표시된 파일은 관리자만 열람 가능(기록 확인용)
-    if not f or f["entry_type"] not in readable_types(user) or (f["deleted_at"] and user["role"] != "staff"):
+    if not f or f["entry_type"] not in readable_types(user) or (f["deleted_at"] and user["role"] not in C.OFFICE_ROLES):
         raise HTTPException(404)
     return storage.response(f["stored_name"], f["mime"], f["original_name"], bool(download))
 
@@ -797,14 +800,14 @@ def file_download(file_id: int, download: int = 0, user=Depends(current_user), c
 # ---------- 사용자 관리 (관리자) ----------
 
 @app.get("/users")
-def users_page(request: Request, user=Depends(staff_user), conn=Depends(get_db)):
+def users_page(request: Request, user=Depends(admin_user), conn=Depends(get_db)):
     users = conn.execute("SELECT * FROM users ORDER BY role DESC, created_at").fetchall()
-    codes = {r: get_setting(conn, f"invite_code_{r}") for r in ("staff", "installer")}
+    codes = {r: get_setting(conn, f"invite_code_{r}") for r in C.ROLES}
     return render(request, "users.html", user=user, users=users, codes=codes)
 
 
 @app.post("/users/{user_id}/toggle")
-def user_toggle(request: Request, user_id: int, user=Depends(staff_user), conn=Depends(get_db)):
+def user_toggle(request: Request, user_id: int, user=Depends(admin_user), conn=Depends(get_db)):
     if user_id == user["id"]:
         flash(request, "본인 계정은 비활성화할 수 없습니다.", "error")
         return redirect("/users")
@@ -813,8 +816,26 @@ def user_toggle(request: Request, user_id: int, user=Depends(staff_user), conn=D
     return redirect("/users")
 
 
+@app.post("/users/{user_id}/role")
+async def user_role(request: Request, user_id: int, user=Depends(admin_user), conn=Depends(get_db)):
+    role = form_str(await request.form(), "role")
+    if role not in C.ROLES:
+        raise HTTPException(400, "알 수 없는 역할입니다.")
+    if user_id == user["id"]:
+        flash(request, "본인 역할은 바꿀 수 없습니다.", "error")  # 관리자가 한 명도 없어지는 일을 막는다
+        return redirect("/users")
+    target = conn.execute("SELECT name, role FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not target:
+        raise HTTPException(404)
+    if target["role"] != role:
+        with conn:
+            conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
+        flash(request, "{name}님의 역할을 {role}(으)로 바꿨습니다.", name=target["name"], role=C.ROLES[role])
+    return redirect("/users")
+
+
 @app.post("/invite-codes/{role}/regenerate")
-def invite_regenerate(request: Request, role: str, user=Depends(staff_user), conn=Depends(get_db)):
+def invite_regenerate(request: Request, role: str, user=Depends(admin_user), conn=Depends(get_db)):
     if role not in C.ROLES:
         raise HTTPException(404)
     with conn:

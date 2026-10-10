@@ -4,7 +4,7 @@
 {% block content %}
 <div class="card auth-card">
   <h1>❄ {{ BRAND }}</h1>
-  <p class="muted">{{ _('관리자·설치업자 전용') }}</p>
+  <p class="muted">{{ _('관리자·매니저·설치업자 전용') }}</p>
   {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
   <form method="post" action="/login" class="stack">
     <input type="hidden" name="next" value="{{ next }}">

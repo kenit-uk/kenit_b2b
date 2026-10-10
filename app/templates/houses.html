@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head">
   <h1>{{ _('현장 목록') }}</h1>
-  {% if user.role == 'staff' %}<a class="btn primary" href="/houses/new">{{ _('+ 집 등록') }}</a>{% endif %}
+  {% if is_office %}<a class="btn primary" href="/houses/new">{{ _('+ 집 등록') }}</a>{% endif %}
 </div>
 
 <div class="chips">
@@ -15,7 +15,7 @@
 
 <form class="card filters" method="get" action="/houses">
   <div class="filter-main">
-    <input type="search" name="q" value="{{ f.q }}" placeholder="{{ _('주소, 우편번호, 집주인 이름·연락처, 메모 검색') if user.role == 'staff' else _('주소, 우편번호, 집주인 이름, 메모 검색') }}">
+    <input type="search" name="q" value="{{ f.q }}" placeholder="{{ _('주소, 우편번호, 집주인 이름·연락처, 메모 검색') if is_office else _('주소, 우편번호, 집주인 이름, 메모 검색') }}">
     <select name="sort" aria-label="{{ _('정렬') }}">
       {% for key, s in sorts.items() %}<option value="{{ key }}" {% if f.sort == key %}selected{% endif %}>{{ _(s[0]) }}</option>{% endfor %}
     </select>

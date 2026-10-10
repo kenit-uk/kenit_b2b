@@ -22,7 +22,7 @@
   </dl>
   {% if house.memo %}<p class="memo">{{ house.memo }}</p>{% endif %}
 
-  {% if user.role == 'staff' %}
+  {% if is_office %}
   <div class="house-actions">
     <form method="post" action="/houses/{{ house.id }}/status" class="status-form">
       <label>{{ _('계약 상태') }}
