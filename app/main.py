@@ -1,7 +1,6 @@
 import hmac
 import json
 import mimetypes
-import os
 import re
 import secrets
 import tempfile
@@ -62,10 +61,6 @@ app.add_middleware(
     https_only=COOKIE_SECURE,
 )
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
-if os.environ.get("IMPORT_TOKEN"):  # 1회용 데이터 옮기기 (옮긴 뒤 제거)
-    from .oneoff_import import router as _import_router
-
-    app.include_router(_import_router)
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
 
