@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head">
   <h1>{{ _('현장 목록') }}</h1>
-  {% if is_office %}<a class="btn primary" href="/houses/new">{{ _('+ 집 등록') }}</a>{% endif %}
+  {% if is_office %}<a class="btn primary hide-mobile" href="/houses/new">{{ _('+ 집 등록') }}</a>{% endif %}
 </div>
 
 <div class="chips">
@@ -50,4 +50,5 @@
   {% if filtered %}{{ _('조건에 맞는 현장이 없습니다.') }}{% else %}{{ _('아직 등록된 집이 없습니다.') }}{% endif %}
 </div>
 {% endif %}
+{% if is_office %}<a class="fab" href="/houses/new" aria-label="{{ _('+ 집 등록') }}">＋</a>{% endif %}
 {% endblock %}

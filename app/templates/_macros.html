@@ -120,15 +120,15 @@ data-upload data-direct="{{ 1 if DIRECT_UPLOAD else 0 }}" data-upload-url="/hous
 {%- endmacro %}
 
 {% macro history_table(rows, entry_type=None, new_ids=()) %}
-  <table class="history">
+  <table class="history stack">
     <thead><tr><th>{{ _('일시') }}</th><th>{{ _('작업') }}</th><th>{{ _('내용') }}</th><th>{{ _('작업자') }}</th></tr></thead>
     <tbody>
     {% for h in rows %}
       {% set et = entry_type or h.entry_type %}
       <tr class="{% if h.id in new_ids %}is-new{% endif %}">
-        <td class="nowrap">{% if h.id in new_ids %}{{ new_badge() }} {% endif %}{{ h.created_at|dt }}</td>
-        <td class="nowrap">{{ _(AUDIT_ACTIONS.get(h.action, h.action)) }}</td>
-        <td>
+        <td class="nowrap" data-label="{{ _('일시') }}">{% if h.id in new_ids %}{{ new_badge() }} {% endif %}{{ h.created_at|dt }}</td>
+        <td class="nowrap" data-label="{{ _('작업') }}">{{ _(AUDIT_ACTIONS.get(h.action, h.action)) }}</td>
+        <td class="cell-body" data-label="{{ _('내용') }}">
           {{ audit_detail(h, et) }}
           {% if h.entry_id and not entry_type %} <a class="small" href="?tab=all#entry-{{ h.entry_id }}">{{ _('기록 보기') }}</a>{% endif %}
           {% if h.snapshot %}
@@ -144,7 +144,7 @@ data-upload data-direct="{{ 1 if DIRECT_UPLOAD else 0 }}" data-upload-url="/hous
             </details>
           {% endif %}
         </td>
-        <td class="nowrap">{{ h.actor_name }}</td>
+        <td class="nowrap" data-label="{{ _('작업자') }}">{{ h.actor_name }}</td>
       </tr>
     {% endfor %}
     </tbody>

@@ -40,8 +40,6 @@ body.with-sidebar { display: grid; grid-template-columns: var(--side-w) minmax(0
 .sidebar a { color: var(--side-ink); }
 .sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 18px 10px; }
 .brand { font-weight: 800; color: #fff !important; font-size: 1.08rem; text-decoration: none !important; }
-.toggle-count { position: absolute; top: -4px; right: -6px; min-width: 17px; padding: 0 5px; border-radius: 99px; background: #e03131; color: #fff; font-size: .68rem; font-weight: 800; line-height: 17px; }
-.menu-toggle { position: relative; display: none; background: none; border: 0; color: #fff; font-size: 1.4rem; cursor: pointer; padding: 2px 6px; }
 .sidebar-body { display: flex; flex-direction: column; flex: 1; padding: 0 10px 14px; }
 .side-section { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #7f93ad; padding: 16px 10px 6px; }
 .side-nav { display: flex; flex-direction: column; gap: 2px; }
@@ -62,7 +60,7 @@ button.link:hover { color: #fff; text-decoration: underline; }
 .page { min-width: 0; display: flex; flex-direction: column; }
 .page main { flex: 1; }
 
-.container { max-width: 1040px; margin: 0 auto; padding: 20px 16px 40px; }
+.container { width: 100%; max-width: 1040px; margin: 0 auto; padding: 20px 16px 40px; }
 .auth { min-height: 85vh; display: grid; place-items: center; padding: 16px; }
 .auth-card { width: 100%; max-width: 400px; }
 .foot { text-align: center; color: var(--muted); font-size: .8rem; padding: 12px 0 24px; }
@@ -235,22 +233,92 @@ table.history { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .code-box code { font-size: 1.05rem; background: #eef1f5; padding: 4px 10px; border-radius: 6px; user-select: all; }
 .code-box form { margin: 0; }
 
+/* 휴대폰 전용 요소 (PC에서는 숨김) */
+.mobile-top, .tabbar, .fab { display: none; }
+.me-name-big { font-size: 1.2rem; font-weight: 800; margin-bottom: 4px; }
+.seg { display: flex; gap: 8px; }
+.seg a { flex: 1; text-align: center; padding: 12px; border: 1px solid #cfd6e0; border-radius: 10px; color: var(--text); font-weight: 600; }
+.seg a.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.seg a:hover { text-decoration: none; }
+.btn.block { width: 100%; padding: 13px; }
+
+/* ===== 휴대폰 화면 (앱처럼: 위쪽 얇은 바 + 아래 탭 메뉴) ===== */
 @media (max-width: 860px) {
-  body.with-sidebar { display: block; }
-  .sidebar { position: sticky; top: 0; z-index: 20; height: auto; max-height: 100vh; }
-  .sidebar-head { padding: 12px 16px; }
-  .menu-toggle { display: block; }
-  .sidebar-body { display: none; }
-  .sidebar.open .sidebar-body { display: flex; }
+  body.with-sidebar { display: block; padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  .sidebar, .hide-mobile { display: none !important; }
+
+  .mobile-top {
+    display: flex; align-items: center; position: sticky; top: 0; z-index: 30;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: var(--side-bg);
+  }
+  .mobile-top .brand { font-size: 1rem; }
+
+  .tabbar {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    background: #fff; border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -2px 10px rgba(18, 36, 61, .06);
+  }
+  .tabbar a {
+    flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; min-height: 58px; color: #7a8698; font-size: .72rem; font-weight: 600;
+  }
+  .tabbar a:hover { text-decoration: none; }
+  .tabbar a.active { color: var(--primary); }
+  .tabbar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .tab-count {
+    position: absolute; top: 5px; left: calc(50% + 6px); min-width: 18px; padding: 0 5px; border-radius: 99px;
+    background: #e03131; color: #fff; font-size: .68rem; line-height: 18px; text-align: center;
+  }
+
+  .fab {
+    display: flex; align-items: center; justify-content: center; position: fixed; z-index: 35;
+    right: 18px; bottom: calc(76px + env(safe-area-inset-bottom));
+    width: 56px; height: 56px; border-radius: 50%; background: var(--primary); color: #fff;
+    font-size: 1.8rem; font-weight: 400; box-shadow: 0 6px 16px rgba(23, 105, 209, .35);
+  }
+  .fab:hover { text-decoration: none; background: #125bb8; }
+
+  /* 아이폰에서 입력칸을 누르면 화면이 확대되지 않도록 16px */
+  input, select, textarea { font-size: 16px; }
+  .btn { min-height: 44px; }
+  .btn.small { min-height: 34px; }
+  .container { padding: 14px 12px 24px; }
+  .foot { padding-bottom: 16px; }
+
+  /* 상태 칩: 한 줄, 옆으로 밀어서 보기 */
+  .chips { flex-wrap: nowrap; overflow-x: auto; margin: 0 -12px 12px; padding: 0 12px 4px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; padding: 7px 13px; }
 }
 @media (max-width: 720px) {
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
-  .house-row { flex-direction: column; align-items: flex-start; }
-  .house-meta { align-items: flex-start; text-align: left; }
+  h1 { font-size: 1.3rem; }
+  .house-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 14px; }
+  .house-main { min-width: 0; }
+  .house-meta { display: contents; }
+  .house-meta .badge { grid-column: 2; grid-row: 1; align-self: start; }
+  .house-meta .small { grid-column: 1 / -1; text-align: left; }
   .filter-main { flex-wrap: wrap; }
   .filter-main select { flex: 1; }
   .filter-main input { flex-basis: 100%; }
   .status-form label, .status-form input { width: 100%; }
+  .status-form .btn { width: 100%; }
+  .house-actions > .btn { width: 100%; }
   .card { padding: 14px; }
-  .history { display: block; overflow-x: auto; }
+  .tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .tab { flex: none; }
+  .inline-search { flex-wrap: wrap; }
+  .attachments { grid-template-columns: repeat(2, 1fr); }
+
+  /* 표 → 카드 */
+  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+  table.stack thead { display: none; }
+  table.stack tr { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  table.stack td { display: flex; gap: 12px; justify-content: space-between; align-items: center; border: 0; padding: 3px 0; white-space: normal; }
+  table.stack td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: .8rem; flex: none; }
+  table.stack td.cell-title { font-weight: 800; font-size: 1rem; }
+  table.stack td.cell-title::before { display: none; }
+  table.stack td.cell-actions:empty { display: none; }
+  table.stack td.cell-body { display: block; }
+  table.stack td.cell-body::before { display: block; margin-bottom: 2px; }
 }

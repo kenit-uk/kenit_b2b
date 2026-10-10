@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ _('내 정보') }} · {{ BRAND }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ _('내 정보') }}</h1></div>
+<section class="card me-card">
+  <div class="me-name-big">{{ user.name }} <span class="role role-{{ user.role }}">{{ _(ROLES[user.role]) }}</span></div>
+  <div class="muted">{{ user.email }}{% if user.phone %} · {{ user.phone }}{% endif %}</div>
+</section>
+<section class="card">
+  <h2>{{ _('언어') }}</h2>
+  <div class="seg">
+    {% for code, label in LANGS.items() %}
+      <a class="{% if code == lang %}active{% endif %}" href="/lang/{{ code }}?next=/me">{{ label }}</a>
+    {% endfor %}
+  </div>
+</section>
+<form method="post" action="/logout"><button class="btn block">{{ _('로그아웃') }}</button></form>
+{% endblock %}

@@ -60,6 +60,7 @@ app.add_middleware(
     same_site="lax",
     https_only=COOKIE_SECURE,
 )
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
@@ -390,6 +391,11 @@ def logout(request: Request):
     request.session.clear()
     request.session["lang"] = lang
     return redirect("/login")
+
+
+@app.get("/me")
+def me_page(request: Request, user=Depends(current_user)):
+    return render(request, "me.html", user=user)
 
 
 @app.get("/lang/{code}")

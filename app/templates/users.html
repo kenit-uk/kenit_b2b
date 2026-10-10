@@ -8,13 +8,13 @@
 <section class="card">
   <h2>{{ _('가입자 ({n})', n=users|length) }}</h2>
   <p class="muted small">{{ _('관리자: 모든 권한 · 매니저: 집 등록·상태 변경·견적·집주인 대화, 매니저·설치업자 초대·비활성화 (역할 변경과 다른 사람의 견적·대화 수정 불가) · 설치업자: 현장정보 작성, 견적 열람') }}</p>
-  <table class="history">
+  <table class="history stack users-table">
     <thead><tr><th>{{ _('이름') }}</th><th>{{ _('역할') }}</th><th>{{ _('이메일') }}</th><th>{{ _('연락처') }}</th><th>{{ _('가입일') }}</th><th>{{ _('상태') }}</th><th></th></tr></thead>
     <tbody>
     {% for u in users %}
       <tr class="{% if not u.active %}inactive{% endif %}">
-        <td>{{ u.name }}</td>
-        <td>
+        <td class="cell-title" data-label="{{ _('이름') }}">{{ u.name }}</td>
+        <td data-label="{{ _('역할') }}">
           {% if is_admin and u.id != user.id %}
           <form method="post" action="/users/{{ u.id }}/role" class="role-form">
             <select name="role" aria-label="{{ _('역할') }}" onchange="this.form.submit()">
@@ -26,11 +26,11 @@
           <span class="role role-{{ u.role }}">{{ _(ROLES[u.role]) }}</span>
           {% endif %}
         </td>
-        <td>{{ u.email }}</td>
-        <td>{{ u.phone or '' }}</td>
-        <td class="nowrap">{{ u.created_at|dt }}</td>
-        <td>{{ _('활성') if u.active else _('비활성') }}</td>
-        <td>
+        <td data-label="{{ _('이메일') }}">{{ u.email }}</td>
+        <td data-label="{{ _('연락처') }}">{{ u.phone or '—' }}</td>
+        <td class="nowrap" data-label="{{ _('가입일') }}">{{ u.created_at|dt }}</td>
+        <td data-label="{{ _('상태') }}">{{ _('활성') if u.active else _('비활성') }}</td>
+        <td class="cell-actions">
           {% if u.id != user.id and u.role in manageable %}
           <form method="post" action="/users/{{ u.id }}/toggle"
                 {% if u.active %}data-confirm="{{ _('{name}님을 비활성화할까요? 로그인할 수 없게 되고, 작성한 기록은 그대로 남습니다.', name=u.name) }}" onsubmit="return confirm(this.dataset.confirm)"{% endif %}>
