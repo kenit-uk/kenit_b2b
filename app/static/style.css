@@ -101,6 +101,7 @@ legend { font-size: .88rem; font-weight: 600; color: #3b4656; margin-bottom: 6px
 .btn:hover { background: #f1f4f8; text-decoration: none; }
 .btn.primary { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); }
 .btn.primary:hover { background: #125bb8; }
+.btn.danger { color: var(--danger); border-color: #f1aeb5; }
 .btn.small { padding: 4px 10px; font-size: .82rem; }
 .btn:disabled { opacity: .6; cursor: wait; }
 
@@ -223,6 +224,12 @@ table.history { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .snapshot summary { cursor: pointer; color: var(--primary); font-size: .82rem; }
 .snapshot { margin-top: 4px; background: #f7f9fb; border-radius: 6px; padding: 4px 8px; }
 
+.invite { display: flex; flex-direction: column; gap: 10px; }
+.invite-head { display: flex; align-items: center; gap: 12px; }
+.invite-head code { font-size: 1.05rem; background: #eef1f5; padding: 4px 10px; border-radius: 6px; user-select: all; }
+.invite-link { font-size: .85rem; color: var(--muted); background: #f7f9fb; }
+.invite .row { flex-wrap: wrap; }
+.push-right { margin: 0 0 0 auto; }
 .codes { display: flex; flex-direction: column; gap: 8px; }
 .code-box { display: flex; align-items: center; gap: 12px; }
 .code-box code { font-size: 1.05rem; background: #eef1f5; padding: 4px 10px; border-radius: 6px; user-select: all; }

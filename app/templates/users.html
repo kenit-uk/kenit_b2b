@@ -3,25 +3,11 @@
 {% block content %}
 <div class="page-head"><h1>{{ _('사용자 관리') }}</h1></div>
 
-<section class="card">
-  <h2>{{ _('초대코드') }}</h2>
-  <p class="muted small">{{ _('가입 시 이 코드를 입력해야 합니다. 코드가 유출되면 새로 발급하세요(이미 가입한 사용자는 영향 없음).') }}</p>
-  <div class="codes">
-    {% for role, code in codes.items() %}
-      <div class="code-box">
-        <span class="role role-{{ role }}">{{ _('{role}용', role=_(ROLES[role])) }}</span>
-        <code>{{ code }}</code>
-        <form method="post" action="/invite-codes/{{ role }}/regenerate" data-confirm="{{ _('{role} 초대코드를 새로 발급할까요?', role=_(ROLES[role])) }}" onsubmit="return confirm(this.dataset.confirm)">
-          <button class="btn small">{{ _('재발급') }}</button>
-        </form>
-      </div>
-    {% endfor %}
-  </div>
-</section>
+<p class="muted small">{{ _('비활성화한 계정은 로그인할 수 없고, 작성한 기록은 그대로 남습니다. 다시 활성화할 수도 있습니다.') }}{% if not is_admin %} {{ _('매니저는 매니저·설치업자 계정만 관리할 수 있습니다.') }}{% endif %}</p>
 
 <section class="card">
   <h2>{{ _('가입자 ({n})', n=users|length) }}</h2>
-  <p class="muted small">{{ _('관리자: 모든 권한 · 매니저: 집 등록·상태 변경·견적·집주인 대화 (사용자 관리 제외, 다른 사람의 견적·대화 수정 불가) · 설치업자: 현장정보 작성, 견적 열람') }}</p>
+  <p class="muted small">{{ _('관리자: 모든 권한 · 매니저: 집 등록·상태 변경·견적·집주인 대화, 매니저·설치업자 초대·비활성화 (역할 변경과 다른 사람의 견적·대화 수정 불가) · 설치업자: 현장정보 작성, 견적 열람') }}</p>
   <table class="history">
     <thead><tr><th>{{ _('이름') }}</th><th>{{ _('역할') }}</th><th>{{ _('이메일') }}</th><th>{{ _('연락처') }}</th><th>{{ _('가입일') }}</th><th>{{ _('상태') }}</th><th></th></tr></thead>
     <tbody>
@@ -29,7 +15,7 @@
       <tr class="{% if not u.active %}inactive{% endif %}">
         <td>{{ u.name }}</td>
         <td>
-          {% if u.id != user.id %}
+          {% if is_admin and u.id != user.id %}
           <form method="post" action="/users/{{ u.id }}/role" class="role-form">
             <select name="role" aria-label="{{ _('역할') }}" onchange="this.form.submit()">
               {% for r, label in ROLES.items() %}<option value="{{ r }}" {% if r == u.role %}selected{% endif %}>{{ _(label) }}</option>{% endfor %}
@@ -45,8 +31,10 @@
         <td class="nowrap">{{ u.created_at|dt }}</td>
         <td>{{ _('활성') if u.active else _('비활성') }}</td>
         <td>
-          {% if u.id != user.id %}
-          <form method="post" action="/users/{{ u.id }}/toggle"><button class="btn small">{{ _('비활성화') if u.active else _('활성화') }}</button></form>
+          {% if u.id != user.id and u.role in manageable %}
+          <form method="post" action="/users/{{ u.id }}/toggle"
+                {% if u.active %}data-confirm="{{ _('{name}님을 비활성화할까요? 로그인할 수 없게 되고, 작성한 기록은 그대로 남습니다.', name=u.name) }}" onsubmit="return confirm(this.dataset.confirm)"{% endif %}>
+            <button class="btn small {% if u.active %}danger{% endif %}">{{ _('비활성화') if u.active else _('활성화') }}</button></form>
           {% endif %}
         </td>
       </tr>

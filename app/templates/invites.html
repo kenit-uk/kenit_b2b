@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ _('초대하기') }} · {{ BRAND }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ _('초대하기') }}</h1></div>
+<p class="muted">{{ _('초대 링크를 보내면 받은 사람이 링크를 눌러 바로 가입합니다. 초대코드는 가입할 때 자동으로 채워집니다.') }}</p>
+
+{% for role, code in codes.items() %}
+<section class="card invite" data-code="{{ code }}"
+         data-share-text="{{ _('{brand} 가입 링크입니다 ({role}). 아래 링크를 눌러 가입해 주세요.', brand=BRAND, role=_(ROLES[role])) }}">
+  <div class="invite-head">
+    <span class="role role-{{ role }}">{{ _('{role}용', role=_(ROLES[role])) }}</span>
+    <code>{{ code }}</code>
+  </div>
+  <input class="invite-link" readonly aria-label="{{ _('초대 링크') }}">
+  <div class="row">
+    <button type="button" class="btn primary js-copy">{{ _('초대 링크 복사') }}</button>
+    <button type="button" class="btn js-share hidden">{{ _('공유') }}</button>
+    {% if is_admin %}
+    <form method="post" action="/invite-codes/{{ role }}/regenerate" class="push-right"
+          data-confirm="{{ _('{role} 초대코드를 새로 발급할까요?', role=_(ROLES[role])) }}" onsubmit="return confirm(this.dataset.confirm)">
+      <button class="btn">{{ _('재발급') }}</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endfor %}
+
+<p class="muted small">
+  {% if is_admin %}{{ _('가입 시 이 코드를 입력해야 합니다. 코드가 유출되면 새로 발급하세요(이미 가입한 사용자는 영향 없음).') }}
+  {% else %}{{ _('코드가 유출된 것 같으면 관리자에게 재발급을 요청하세요.') }}{% endif %}
+</p>
+
+<script>
+  document.querySelectorAll('.invite').forEach(card => {
+    const link = location.origin + '/signup?code=' + encodeURIComponent(card.dataset.code);
+    const input = card.querySelector('.invite-link');
+    input.value = link;
+    const copyBtn = card.querySelector('.js-copy'), label = copyBtn.textContent;
+    copyBtn.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(link); } catch (e) { input.select(); document.execCommand('copy'); }
+      copyBtn.textContent = {{ _('복사했습니다 ✓')|tojson }};
+      setTimeout(() => copyBtn.textContent = label, 2000);
+    });
+    const shareBtn = card.querySelector('.js-share');
+    if (navigator.share) {   // 휴대폰: WhatsApp·문자 등으로 바로 보내기
+      shareBtn.classList.remove('hidden');
+      shareBtn.addEventListener('click', () => navigator.share({ text: card.dataset.shareText, url: link }).catch(() => {}));
+    }
+  });
+</script>
+{% endblock %}

@@ -8,6 +8,8 @@ STATUSES = ["검토전", "검토필요", "검토중", "견적완료", "설치중
 ROLES = {"staff": "관리자", "manager": "매니저", "installer": "설치업자"}
 ADMIN_ROLES = ("staff",)
 OFFICE_ROLES = ("staff", "manager")  # 집 등록·상태 변경·견적·집주인 대화를 다루는 역할
+# 역할별로 초대(초대코드 전달)·비활성화할 수 있는 역할. 매니저는 관리자를 초대하거나 건드릴 수 없다.
+MANAGEABLE = {"staff": ("staff", "manager", "installer"), "manager": ("manager", "installer")}
 
 ENTRY_TYPES = {"survey": "현장정보", "quote": "견적", "conversation": "집주인 대화"}
 

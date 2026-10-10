@@ -403,8 +403,9 @@ def set_lang(request: Request, code: str, next: str = "/houses", conn=Depends(ge
 
 
 @app.get("/signup")
-def signup_page(request: Request):
-    return render(request, "signup.html", form={})
+def signup_page(request: Request, code: str = ""):
+    # 초대 링크(/signup?code=...)로 들어오면 초대코드를 미리 채운다
+    return render(request, "signup.html", form={"invite_code": code.strip()[:100]})
 
 
 @app.post("/signup")
@@ -800,17 +801,27 @@ def file_download(file_id: int, download: int = 0, user=Depends(current_user), c
 # ---------- 사용자 관리 (관리자) ----------
 
 @app.get("/users")
-def users_page(request: Request, user=Depends(admin_user), conn=Depends(get_db)):
+def users_page(request: Request, user=Depends(office_user), conn=Depends(get_db)):
     users = conn.execute("SELECT * FROM users ORDER BY role DESC, created_at").fetchall()
-    codes = {r: get_setting(conn, f"invite_code_{r}") for r in C.ROLES}
-    return render(request, "users.html", user=user, users=users, codes=codes)
+    return render(request, "users.html", user=user, users=users, manageable=C.MANAGEABLE[user["role"]])
+
+
+@app.get("/invites")
+def invites_page(request: Request, user=Depends(office_user), conn=Depends(get_db)):
+    codes = {r: get_setting(conn, f"invite_code_{r}") for r in C.MANAGEABLE[user["role"]]}
+    return render(request, "invites.html", user=user, codes=codes)
 
 
 @app.post("/users/{user_id}/toggle")
-def user_toggle(request: Request, user_id: int, user=Depends(admin_user), conn=Depends(get_db)):
+def user_toggle(request: Request, user_id: int, user=Depends(office_user), conn=Depends(get_db)):
     if user_id == user["id"]:
         flash(request, "본인 계정은 비활성화할 수 없습니다.", "error")
         return redirect("/users")
+    target = conn.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not target:
+        raise HTTPException(404)
+    if target["role"] not in C.MANAGEABLE[user["role"]]:  # 매니저는 관리자 계정을 건드릴 수 없다
+        raise Forbidden()
     with conn:
         conn.execute("UPDATE users SET active = 1 - active WHERE id = ?", (user_id,))
     return redirect("/users")
@@ -841,4 +852,4 @@ def invite_regenerate(request: Request, role: str, user=Depends(admin_user), con
     with conn:
         set_setting(conn, f"invite_code_{role}", secrets.token_urlsafe(9))
     flash(request, "{role} 초대코드를 새로 발급했습니다. 이전 코드로는 더 이상 가입할 수 없습니다.", role=C.ROLES[role])
-    return redirect("/users")
+    return redirect("/invites")
