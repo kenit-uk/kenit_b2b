@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ _('현장 목록') }} · {{ _('에어컨 설치 기록') }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ _('현장 목록') }}</h1>
+  {% if user.role == 'staff' %}<a class="btn primary" href="/houses/new">{{ _('+ 집 등록') }}</a>{% endif %}
+</div>
+
+<div class="chips">
+  <a class="chip {% if not f.status %}active{% endif %}" href="/houses">{{ _('전체') }} <b>{{ total }}</b></a>
+  {% for s in STATUSES %}
+    <a class="chip status-{{ loop.index }} {% if f.status == [s] %}active{% endif %}" href="/houses?status={{ s|urlencode }}">{{ _(s) }} <b>{{ counts.get(s, 0) }}</b></a>
+  {% endfor %}
+</div>
+
+<form class="card filters" method="get" action="/houses">
+  <div class="filter-main">
+    <input type="search" name="q" value="{{ f.q }}" placeholder="{{ _('주소, 우편번호, 집주인 이름·연락처, 메모 검색') if user.role == 'staff' else _('주소, 우편번호, 집주인 이름, 메모 검색') }}">
+    <select name="sort" aria-label="{{ _('정렬') }}">
+      {% for key, s in sorts.items() %}<option value="{{ key }}" {% if f.sort == key %}selected{% endif %}>{{ _(s[0]) }}</option>{% endfor %}
+    </select>
+    <button class="btn primary">{{ _('검색') }}</button>
+  </div>
+  <details {% if f.status|length > 1 or f.installer or f.has_survey or f.has_quote or f.date_from or f.date_to %}open{% endif %}>
+    <summary>{{ _('상세 필터') }}</summary>
+    <div class="filter-grid">
+      <fieldset>
+        <legend>{{ _('상태 (여러 개 선택 가능)') }}</legend>
+        <div class="checks">
+          {% for s in STATUSES %}
+            <label class="check"><input type="checkbox" name="status" value="{{ s }}" {% if s in f.status %}checked{% endif %}> {{ _(s) }}</label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <label>{{ _('등록일 (부터)') }} <input type="date" name="date_from" value="{{ f.date_from }}"></label>
+      <label>{{ _('등록일 (까지)') }} <input type="date" name="date_to" value="{{ f.date_to }}"></label>
+      <label>{{ _('현장정보 작성 설치업자') }}
+        <select name="installer">
+          <option value="">{{ _('전체') }}</option>
+          {% for i in installers %}<option value="{{ i.id }}" {% if f.installer == i.id|string %}selected{% endif %}>{{ i.name }}</option>{% endfor %}
+        </select>
+      </label>
+      {% for key, label in (('has_survey', '현장정보'), ('has_quote', '견적')) %}
+      <label>{{ _(label) }}
+        <select name="{{ key }}">
+          <option value="">{{ _('전체') }}</option>
+          <option value="yes" {% if f[key] == 'yes' %}selected{% endif %}>{{ _('있음') }}</option>
+          <option value="no" {% if f[key] == 'no' %}selected{% endif %}>{{ _('아직 없음') }}</option>
+        </select>
+      </label>
+      {% endfor %}
+    </div>
+  </details>
+  {% if filtered %}
+    <p class="muted small">{{ _('검색 결과 {n}건', n=houses|length) }} · <a href="/houses">{{ _('필터 초기화') }}</a></p>
+  {% endif %}
+</form>
+
+{% if houses %}
+<div class="house-list">
+  {% for h in houses %}
+  <a class="card house-row" href="/houses/{{ h.id }}">
+    <div class="house-main">
+      <div class="house-addr">{{ h.address }}</div>
+      <div class="muted small">
+        {% if h.postcode %}<span class="postcode">{{ h.postcode }}</span>{% endif %}
+        {% if h.landlord_name %} · {{ _('집주인 {name}', name=h.landlord_name) }}{% endif %}
+      </div>
+    </div>
+    <div class="house-meta">
+      <span class="badge status-{{ STATUSES.index(h.status) + 1 }}">{{ _(h.status) }}</span>
+      <span class="small muted">{{ _('현장정보 {n} · 견적 {m}', n=h.survey_count, m=h.quote_count) }}</span>
+      <span class="small muted">{{ _('최근 {when}', when=h.last_activity|dt) }}</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card empty">
+  {% if filtered %}{{ _('조건에 맞는 현장이 없습니다.') }}{% else %}{{ _('아직 등록된 집이 없습니다.') }}{% endif %}
+</div>
+{% endif %}
+{% endblock %}

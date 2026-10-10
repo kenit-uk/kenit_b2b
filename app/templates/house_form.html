@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% set editing = house and house.id %}
+{% block title %}{{ _('집 정보 수정') if editing else _('새 집 등록') }} · {{ _('에어컨 설치 기록') }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ _('집 정보 수정') if editing else _('새 집 등록') }}</h1>
+  <a class="btn" href="{% if editing %}/houses/{{ house.id }}{% else %}/houses{% endif %}">{{ _('취소') }}</a>
+</div>
+{% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+{% set h = house or {} %}
+<form class="card stack" method="post" action="{% if editing %}/houses/{{ house.id }}/edit{% else %}/houses/new{% endif %}">
+  <label>{{ _('주소 *') }} <input name="address" value="{{ h.address or '' }}" required placeholder="{{ _('예: Flat 3, 12 Baker Street, London') }}"></label>
+  <label>{{ _('우편번호 (Postcode)') }} <input name="postcode" value="{{ h.postcode or '' }}" placeholder="{{ _('예: NW1 6XE') }}" style="text-transform:uppercase"></label>
+  <div class="grid-2">
+    <label>{{ _('집주인 이름') }} <input name="landlord_name" value="{{ h.landlord_name or '' }}"></label>
+    <label>{{ _('집주인 연락처') }} <input type="tel" name="landlord_phone" value="{{ h.landlord_phone or '' }}"></label>
+  </div>
+  <label>{{ _('집주인 이메일') }} <input type="email" name="landlord_email" value="{{ h.landlord_email or '' }}"></label>
+  <label>{{ _('메모 (출입 방법, 방문 가능 시간 등)') }} <textarea name="memo" rows="4">{{ h.memo or '' }}</textarea></label>
+  {% if editing %}<p class="muted small">{{ _('수정하면 이전 내용이 변경이력에 남습니다.') }}</p>{% endif %}
+  <button class="btn primary">{{ _('저장') if editing else _('등록하기') }}</button>
+</form>
+{% endblock %}

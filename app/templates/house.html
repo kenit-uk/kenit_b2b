@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ house.address }} · {{ _('에어컨 설치 기록') }}{% endblock %}
+{% block content %}
+<a class="back" href="/houses">{{ _('← 현장 목록') }}</a>
+
+<section class="card house-head">
+  <div class="house-head-top">
+    <div>
+      <h1>{{ house.address }}</h1>
+      {% if house.postcode %}<span class="postcode big">{{ house.postcode }}</span>{% endif %}
+    </div>
+    {{ m.status_badge(house.status) }}
+  </div>
+
+  <dl class="facts">
+    {% if house.landlord_name %}<div><dt>{{ _('집주인') }}</dt><dd>{{ house.landlord_name }}</dd></div>{% endif %}
+    {% if house.landlord_phone %}<div><dt>{{ _('연락처') }}</dt><dd><a href="tel:{{ house.landlord_phone }}">{{ house.landlord_phone }}</a></dd></div>{% endif %}
+    {% if house.landlord_email %}<div><dt>{{ _('이메일') }}</dt><dd><a href="mailto:{{ house.landlord_email }}">{{ house.landlord_email }}</a></dd></div>{% endif %}
+    <div><dt>{{ _('등록') }}</dt><dd>{{ house.created_at|dt }} · {{ house.creator_name }}</dd></div>
+    <div><dt>{{ _('최종 수정') }}</dt><dd>{{ house.updated_at|dt }}{% if house.updater_name %} · {{ house.updater_name }}{% endif %}</dd></div>
+  </dl>
+  {% if house.memo %}<p class="memo">{{ house.memo }}</p>{% endif %}
+
+  {% if user.role == 'staff' %}
+  <div class="house-actions">
+    <form method="post" action="/houses/{{ house.id }}/status" class="status-form">
+      <label>{{ _('계약 상태') }}
+        <select name="status">
+          {% for s in STATUSES %}<option value="{{ s }}" {% if s == house.status %}selected{% endif %}>{{ _(s) }}</option>{% endfor %}
+        </select>
+      </label>
+      <input name="note" placeholder="{{ _('변경 사유 (선택)') }}" maxlength="500">
+      <button class="btn primary">{{ _('상태 변경') }}</button>
+    </form>
+    <a class="btn" href="/houses/{{ house.id }}/edit">{{ _('집 정보 수정') }}</a>
+  </div>
+  {% endif %}
+</section>
+
+{% if writable %}
+{% set open_form = tab if tab in writable else writable[0] %}
+<section class="card" id="new">
+  <h2>{{ _('새 기록 작성') }}</h2>
+  <div class="tabs" role="tablist">
+    {% for t in writable %}
+      <button type="button" class="tab {% if t == open_form %}active{% endif %}" data-target="form-{{ t }}">{{ _(ENTRY_TYPES[t]) }}</button>
+    {% endfor %}
+  </div>
+  {% for t in writable %}
+    <form id="form-{{ t }}" class="stack entry-form {% if t != open_form %}hidden{% endif %}"
+          method="post" action="/houses/{{ house.id }}/entries/{{ t }}" enctype="multipart/form-data">
+      {{ m.entry_inputs(t) }}
+      {{ m.file_input() }}
+      <button class="btn primary">{{ _('{type} 저장', type=_(ENTRY_TYPES[t])) }}</button>
+    </form>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section>
+  <div class="tabs links">
+    <a class="tab {% if tab == 'all' %}active{% endif %}" href="?tab=all">{{ _('전체') }}</a>
+    {% for t in types %}
+      <a class="tab {% if tab == t %}active{% endif %}" href="?tab={{ t }}">{{ _(ENTRY_TYPES[t]) }} <b>{{ type_counts[t] }}</b></a>
+    {% endfor %}
+    <a class="tab {% if tab == 'status' %}active{% endif %}" href="?tab=status">{{ _('상태변경') }}</a>
+    <a class="tab {% if tab == 'history' %}active{% endif %}" href="?tab=history">{{ _('변경이력') }}</a>
+  </div>
+
+  {% if tab != 'history' %}
+  <form class="inline-search" method="get">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ _('이 현장 기록 안에서 검색 (내용, 첨부파일명, 작성자)') }}">
+    <button class="btn">{{ _('검색') }}</button>
+    {% if q %}<a class="small" href="?tab={{ tab }}">{{ _('지우기') }}</a>{% endif %}
+  </form>
+  {% endif %}
+
+  {% if tab == 'history' %}
+    <div class="card">{{ m.history_table(history) }}</div>
+  {% else %}
+    {% for item in timeline %}
+      {% if item.kind == 'status' %}
+        {% set log = item.log %}
+        <div class="timeline-status">
+          <span>🔁 {{ _('상태 변경') }} <b>{{ m.audit_detail(log) }}</b>{% if log.snapshot %} — {{ (log.snapshot|fromjson).note }}{% endif %}</span>
+          <span class="muted small">{{ log.created_at|dt }} · {{ log.actor_name }}</span>
+        </div>
+      {% else %}
+        {% set e = item.entry %}
+        <article class="card entry entry-{{ e.type }}" id="entry-{{ e.id }}">
+          <header class="entry-head">
+            <span class="entry-type">{{ _(ENTRY_TYPES[e.type]) }}</span>
+            <span class="entry-author">{{ e.author_name }} <span class="role role-{{ e.author_role }}">{{ _(ROLES[e.author_role]) }}</span></span>
+            {% if can_edit(e) %}<a class="btn small" href="/entries/{{ e.id }}/edit">{{ _('수정') }}</a>{% endif %}
+          </header>
+          <div class="entry-times small muted">
+            {{ _('작성 {when}', when=e.created_at|dt) }}
+            {% if e.updated_at != e.created_at or e.edit_count %}
+              · <span class="edited">{{ _('수정 {when}', when=e.updated_at|dt) }}{% if e.updater_name %} ({{ e.updater_name }}){% endif %}{% if e.edit_count %} · {{ _('내용수정 {n}회', n=e.edit_count) }}{% endif %}</span>
+            {% endif %}
+          </div>
+          {{ m.entry_values(e.type, e.fields|fromjson) }}
+          {% if e.body %}<p class="body">{{ e.body }}</p>{% endif %}
+          {{ m.attachment_grid(files.get(e.id, [])) }}
+        </article>
+      {% endif %}
+    {% else %}
+      <div class="card empty">{% if q %}{{ _("'{q}'에 해당하는 기록이 없습니다.", q=q) }}{% else %}{{ _('아직 기록이 없습니다.') }}{% endif %}</div>
+    {% endfor %}
+  {% endif %}
+</section>
+
+<script>
+  document.querySelectorAll('#new .tab').forEach(btn => btn.addEventListener('click', () => {
+    document.querySelectorAll('#new .tab').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('#new .entry-form').forEach(f => f.classList.toggle('hidden', f.id !== btn.dataset.target));
+  }));
+  // 업로드 중 중복 제출 방지
+  document.querySelectorAll('form[enctype]').forEach(f => f.addEventListener('submit', () => {
+    const b = f.querySelector('button.primary'); if (b) { b.disabled = true; b.textContent = {{ _('저장 중…')|tojson }}; }
+  }));
+</script>
+{% endblock %}

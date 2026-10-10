@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ _('사용자 관리') }} · {{ _('에어컨 설치 기록') }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ _('사용자 관리') }}</h1></div>
+
+<section class="card">
+  <h2>{{ _('초대코드') }}</h2>
+  <p class="muted small">{{ _('가입 시 이 코드를 입력해야 합니다. 코드가 유출되면 새로 발급하세요(이미 가입한 사용자는 영향 없음).') }}</p>
+  <div class="codes">
+    {% for role, code in codes.items() %}
+      <div class="code-box">
+        <span class="role role-{{ role }}">{{ _('{role}용', role=_(ROLES[role])) }}</span>
+        <code>{{ code }}</code>
+        <form method="post" action="/invite-codes/{{ role }}/regenerate" data-confirm="{{ _('{role} 초대코드를 새로 발급할까요?', role=_(ROLES[role])) }}" onsubmit="return confirm(this.dataset.confirm)">
+          <button class="btn small">{{ _('재발급') }}</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>{{ _('가입자 ({n})', n=users|length) }}</h2>
+  <table class="history">
+    <thead><tr><th>{{ _('이름') }}</th><th>{{ _('역할') }}</th><th>{{ _('이메일') }}</th><th>{{ _('연락처') }}</th><th>{{ _('가입일') }}</th><th>{{ _('상태') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr class="{% if not u.active %}inactive{% endif %}">
+        <td>{{ u.name }}</td>
+        <td><span class="role role-{{ u.role }}">{{ _(ROLES[u.role]) }}</span></td>
+        <td>{{ u.email }}</td>
+        <td>{{ u.phone or '' }}</td>
+        <td class="nowrap">{{ u.created_at|dt }}</td>
+        <td>{{ _('활성') if u.active else _('비활성') }}</td>
+        <td>
+          {% if u.id != user.id %}
+          <form method="post" action="/users/{{ u.id }}/toggle"><button class="btn small">{{ _('비활성화') if u.active else _('활성화') }}</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ _('에어컨 설치 기록') }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  {% macro lang_switch(cls='') -%}
+    <span class="lang-switch {{ cls }}">
+      {% for code, label in LANGS.items() %}
+        {% if code == lang %}<b>{{ label }}</b>{% else %}<a href="/lang/{{ code }}?next={{ here|urlencode }}">{{ label }}</a>{% endif %}
+      {% endfor %}
+    </span>
+  {%- endmacro %}
+
+  {% if user %}
+  <header class="topbar">
+    <a class="brand" href="/houses">❄ {{ _('설치 기록') }}</a>
+    <nav>
+      <a href="/houses">{{ _('현장 목록') }}</a>
+      {% if user.role == 'staff' %}
+        <a href="/houses/new">{{ _('+ 집 등록') }}</a>
+        <a href="/users">{{ _('사용자') }}</a>
+      {% endif %}
+    </nav>
+    <div class="me">
+      {{ lang_switch() }}
+      <span class="role role-{{ user.role }}">{{ _(ROLES[user.role]) }}</span>
+      <span class="me-name">{{ user.name }}</span>
+      <form method="post" action="/logout"><button class="link">{{ _('로그아웃') }}</button></form>
+    </div>
+  </header>
+  {% else %}
+  <div class="auth-lang">{{ lang_switch('dark') }}</div>
+  {% endif %}
+
+  <main class="{% block main_class %}container{% endblock %}">
+    {% for f in flashes %}
+      <div class="flash flash-{{ f.kind }}">{{ f.message }}</div>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="foot">{{ _('모든 시각은 런던 시간(Europe/London) 기준') }}</footer>
+</body>
+</html>

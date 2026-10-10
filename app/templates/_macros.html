@@ -1,0 +1,136 @@
+{% macro status_badge(status) -%}
+<span class="badge status-{{ STATUSES.index(status) + 1 if status in STATUSES else 0 }}">{{ _(status) }}</span>
+{%- endmacro %}
+
+{# 변경이력 detail → 화면 문구 (detail은 언어 중립 값으로 저장됨) #}
+{% macro audit_detail(h, entry_type=None) -%}
+  {%- set et = entry_type or h.entry_type -%}
+  {%- if h.action == 'status' -%}
+    {% for s in h.detail.split(' → ') %}{{ _(s) }}{% if not loop.last %} → {% endif %}{% endfor %}
+  {%- elif h.action == 'house_edit' -%}
+    {%- set labels = [] -%}
+    {%- for k in (h.detail or '').split(',') if k -%}{%- set _ignored = labels.append(_(HOUSE_LABELS.get(k, k))) -%}{%- endfor -%}
+    {{ _('변경된 항목: {fields}', fields=labels|join(', ')) }}
+  {%- elif h.action == 'entry_create' -%}
+    {{ _(ENTRY_TYPES[et]) }}{% if h.detail and h.detail != '0' %} ({{ _('첨부 {n}개', n=h.detail) }}){% endif %}
+  {%- elif h.action == 'entry_edit' -%}
+    {{ _(ENTRY_TYPES[et]) }}
+  {%- else -%}
+    {{ h.detail or '' }}
+  {%- endif -%}
+{%- endmacro %}
+
+{# 기록 종류별 입력 필드 #}
+{% macro entry_inputs(type, v={}) %}
+  {% if type == 'survey' %}
+    <div class="grid-3">
+      <label>{{ _('주거형태') }}
+        <select name="property_type">
+          <option value="">{{ _('선택') }}</option>
+          {% for p in PROPERTY_TYPES %}<option value="{{ p }}" {% if v.property_type == p %}selected{% endif %}>{{ _(p) }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>{{ _('면적 (㎡)') }} <input name="floor_area" inputmode="decimal" value="{{ v.floor_area or '' }}" placeholder="{{ _('예: 75') }}"></label>
+      <label>{{ _('방 개수') }} <input name="rooms" inputmode="numeric" value="{{ v.rooms or '' }}" placeholder="{{ _('예: 3') }}"></label>
+      <label>{{ _('층수 / 해당 층') }} <input name="floors" value="{{ v.floors or '' }}" placeholder="{{ _('예: 2층 건물 / 3층') }}"></label>
+      <label>{{ _('설치 희망 대수·위치') }} <input name="units_wanted" value="{{ v.units_wanted or '' }}" placeholder="{{ _('예: 거실1, 안방1') }}"></label>
+    </div>
+    <label>{{ _('집 구조·현장 메모') }} <textarea name="body" rows="5" placeholder="{{ _('배관 경로, 실외기 위치, 전기 용량, 벽 재질, 주차/출입 등') }}">{{ v.body or '' }}</textarea></label>
+  {% elif type == 'quote' %}
+    <div class="grid-2">
+      <label>{{ _('견적 금액 (£)') }} <input name="amount" inputmode="decimal" value="{{ v.amount or '' }}" placeholder="{{ _('예: 3,450') }}"></label>
+      <label>{{ _('설치 대수') }} <input name="units" value="{{ v.units or '' }}" placeholder="{{ _('예: 2대') }}"></label>
+    </div>
+    <label>{{ _('견적 내용') }} <textarea name="body" rows="6" placeholder="{{ _('모델, 포함 항목, 공사 일정, 조건 등') }}">{{ v.body or '' }}</textarea></label>
+  {% elif type == 'conversation' %}
+    <div class="grid-2">
+      <label>{{ _('방법') }}
+        <select name="channel">
+          <option value="">{{ _('선택') }}</option>
+          {% for c in CONVERSATION_CHANNELS %}<option value="{{ c }}" {% if v.channel == c %}selected{% endif %}>{{ _(c) }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>{{ _('대화 일시 (런던 시간)') }} <input type="datetime-local" name="occurred_at" value="{{ v.occurred_at or '' }}"></label>
+    </div>
+    <label>{{ _('대화 내용') }} <textarea name="body" rows="6" placeholder="{{ _('집주인과 나눈 내용, 요청사항, 약속한 사항') }}">{{ v.body or '' }}</textarea></label>
+  {% endif %}
+{% endmacro %}
+
+{# 기록 종류별 필드 표시 #}
+{% macro entry_values(type, v) %}
+  {% set items = [] %}
+  {% if type == 'survey' %}
+    {% set items = [('주거형태', _(v.property_type) if v.property_type else ''), ('면적', (v.floor_area ~ ' ㎡') if v.floor_area else ''), ('방 개수', v.rooms), ('층수', v.floors), ('설치 희망', v.units_wanted)] %}
+  {% elif type == 'quote' %}
+    {% set items = [('견적 금액', ('£' ~ v.amount) if v.amount else ''), ('설치 대수', v.units)] %}
+  {% elif type == 'conversation' %}
+    {% set items = [('방법', _(v.channel) if v.channel else ''), ('대화 일시', v.occurred_at|localdt)] %}
+  {% endif %}
+  {% if items|selectattr(1)|list %}
+  <dl class="facts">
+    {% for label, value in items if value %}<div><dt>{{ _(label) }}</dt><dd>{{ value }}</dd></div>{% endfor %}
+  </dl>
+  {% endif %}
+{% endmacro %}
+
+{% macro attachment_grid(files, removable=false) %}
+  {% if files %}
+  <div class="attachments">
+    {% for a in files %}
+      <div class="att">
+        {% if a.mime.startswith('image/') and a.mime not in ('image/heic', 'image/heif') %}
+          <a href="/files/{{ a.id }}" target="_blank"><img src="/files/{{ a.id }}" alt="{{ a.original_name }}" loading="lazy"></a>
+        {% elif a.mime.startswith('video/') %}
+          <video src="/files/{{ a.id }}" controls preload="metadata"></video>
+        {% else %}
+          <a class="file-tile" href="/files/{{ a.id }}" target="_blank">{{ '📄' if a.mime == 'application/pdf' else '🖼' }}<span>{{ a.mime.split('/')[1]|upper }}</span></a>
+        {% endif %}
+        <div class="att-meta">
+          <a href="/files/{{ a.id }}?download=1" title="{{ a.original_name }}">{{ a.original_name }}</a>
+          <span class="muted">{{ a.size|size }} · {{ a.created_at|dt }}</span>
+          {% if removable %}<label class="check danger"><input type="checkbox" name="remove_files" value="{{ a.id }}"> {{ _('삭제') }}</label>{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro file_input() %}
+  <label class="file-drop">
+    {{ _('📎 사진·동영상·PDF 첨부 (여러 개 선택 가능)') }}
+    <input type="file" name="files" multiple accept="image/*,video/mp4,video/quicktime,application/pdf">
+  </label>
+{% endmacro %}
+
+{% macro history_table(rows, entry_type=None) %}
+  <table class="history">
+    <thead><tr><th>{{ _('일시') }}</th><th>{{ _('작업') }}</th><th>{{ _('내용') }}</th><th>{{ _('작업자') }}</th></tr></thead>
+    <tbody>
+    {% for h in rows %}
+      {% set et = entry_type or h.entry_type %}
+      <tr>
+        <td class="nowrap">{{ h.created_at|dt }}</td>
+        <td class="nowrap">{{ _(AUDIT_ACTIONS.get(h.action, h.action)) }}</td>
+        <td>
+          {{ audit_detail(h, et) }}
+          {% if h.entry_id and not entry_type %} <a class="small" href="?tab=all#entry-{{ h.entry_id }}">{{ _('기록 보기') }}</a>{% endif %}
+          {% if h.snapshot %}
+            {% set snap = h.snapshot|fromjson %}
+            <details class="snapshot"><summary>{{ _('사유') if h.action == 'status' else _('수정 전 내용') }}</summary>
+              {% if h.action == 'status' %}<p>{{ snap.note }}</p>
+              {% elif h.action == 'house_edit' %}
+                <dl class="facts">{% for k, val in snap.items() %}<div><dt>{{ _(HOUSE_LABELS.get(k, k)) }}</dt><dd>{{ val or '—' }}</dd></div>{% endfor %}</dl>
+              {% else %}
+                {{ entry_values(et, snap.fields) }}
+                {% if snap.body %}<p class="body">{{ snap.body }}</p>{% endif %}
+              {% endif %}
+            </details>
+          {% endif %}
+        </td>
+        <td class="nowrap">{{ h.actor_name }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% endmacro %}

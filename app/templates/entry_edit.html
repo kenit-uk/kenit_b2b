@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ _('{type} 수정', type=_(ENTRY_TYPES[entry.type])) }} · {{ _('에어컨 설치 기록') }}{% endblock %}
+{% block content %}
+<a class="back" href="/houses/{{ house.id }}#entry-{{ entry.id }}">← {{ house.address }}</a>
+<div class="page-head">
+  <h1>{{ _('{type} 수정', type=_(ENTRY_TYPES[entry.type])) }}</h1>
+</div>
+<p class="muted small">
+  {{ _('작성 {when} · {name}', when=entry.created_at|dt, name=entry.author_name) }}
+  {% if entry.updated_at != entry.created_at or entry.edit_count %} · {{ _('최종 수정 {when}', when=entry.updated_at|dt) }}{% if entry.updater_name %} ({{ entry.updater_name }}){% endif %}{% endif %}
+</p>
+{% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+
+<form class="card stack" method="post" action="/entries/{{ entry.id }}/edit" enctype="multipart/form-data">
+  {% set v = entry.fields|fromjson %}
+  {{ m.entry_inputs(entry.type, dict(v, body=entry.body)) }}
+  {% if files %}
+    <div>
+      <h3>{{ _('현재 첨부') }}</h3>
+      <p class="muted small">{{ _('삭제를 체크한 첨부는 목록에서 숨겨지지만 기록 보존을 위해 서버에는 남고, 변경이력에 기록됩니다.') }}</p>
+      {{ m.attachment_grid(files, removable=true) }}
+    </div>
+  {% endif %}
+  {{ m.file_input() }}
+  <p class="muted small">{{ _('저장하면 수정 전 내용과 수정 시각이 변경이력에 남습니다.') }}</p>
+  <div class="row">
+    <button class="btn primary">{{ _('저장') }}</button>
+    <a class="btn" href="/houses/{{ house.id }}#entry-{{ entry.id }}">{{ _('취소') }}</a>
+  </div>
+</form>
+
+{% if revisions %}
+<section class="card">
+  <h2>{{ _('이 기록의 변경이력') }}</h2>
+  {{ m.history_table(revisions, entry.type) }}
+</section>
+{% endif %}
+<script>
+  document.querySelector('form[enctype]').addEventListener('submit', e => {
+    const b = e.target.querySelector('button.primary'); b.disabled = true; b.textContent = {{ _('저장 중…')|tojson }};
+  });
+</script>
+{% endblock %}

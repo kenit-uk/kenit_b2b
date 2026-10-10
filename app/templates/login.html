@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ _('로그인') }} · {{ _('에어컨 설치 기록') }}{% endblock %}
+{% block main_class %}auth{% endblock %}
+{% block content %}
+<div class="card auth-card">
+  <h1>❄ {{ _('에어컨 설치 기록') }}</h1>
+  <p class="muted">{{ _('직원·설치업자 전용') }}</p>
+  {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+  <form method="post" action="/login" class="stack">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>{{ _('이메일') }} <input type="email" name="email" value="{{ email or '' }}" required autofocus autocomplete="username"></label>
+    <label>{{ _('비밀번호') }} <input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary">{{ _('로그인') }}</button>
+  </form>
+  <p class="muted small">{{ _('계정이 없나요?') }} <a href="/signup">{{ _('초대코드로 가입') }}</a></p>
+</div>
+{% endblock %}
