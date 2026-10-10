@@ -4,7 +4,7 @@ BRAND = "Kenit - Aircondition"
 # 계약 상태 (표시 순서)
 STATUSES = ["검토전", "검토필요", "검토중", "견적완료", "설치중", "설치완료", "보류"]
 
-ROLES = {"staff": "직원", "installer": "설치업자"}
+ROLES = {"staff": "관리자", "installer": "설치업자"}  # 내부 값 staff = 화면 표시 "관리자"
 
 ENTRY_TYPES = {"survey": "현장정보", "quote": "견적", "conversation": "집주인 대화"}
 

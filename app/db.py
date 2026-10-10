@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS houses (
   updated_at      TEXT NOT NULL
 );
 
--- 설치업자 현장정보(survey), 직원 견적(quote), 집주인 대화(conversation)
+-- 설치업자 현장정보(survey), 관리자 견적(quote), 집주인 대화(conversation)
 CREATE TABLE IF NOT EXISTS entries (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   house_id    INTEGER NOT NULL REFERENCES houses(id),

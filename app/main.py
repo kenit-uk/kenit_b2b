@@ -332,7 +332,7 @@ async def login(request: Request, conn=Depends(get_db)):
                       error="이메일 또는 비밀번호가 맞지 않습니다.", status_code=400)
     if not user["active"]:
         return render(request, "login.html", next=next_url, email=email,
-                      error="비활성화된 계정입니다. 관리 직원에게 문의하세요.", status_code=403)
+                      error="비활성화된 계정입니다. 관리자에게 문의하세요.", status_code=403)
     lang = user["lang"] or detect_lang(request)
     request.session.clear()
     request.session.update(user_id=user["id"], lang=lang)
@@ -383,7 +383,7 @@ async def signup(request: Request, conn=Depends(get_db)):
     elif password != (form.get("password2") or ""):
         error = "비밀번호 확인이 일치하지 않습니다."
     elif role is None:
-        error = "초대코드가 올바르지 않습니다. 담당 직원에게 초대코드를 받아주세요."
+        error = "초대코드가 올바르지 않습니다. 관리자에게 초대코드를 받아주세요."
     if error:
         return render(request, "signup.html", form=data, error=error, status_code=400)
 
@@ -715,13 +715,13 @@ def file_download(file_id: int, download: int = 0, user=Depends(current_user), c
         "SELECT a.*, e.type AS entry_type FROM attachments a JOIN entries e ON e.id = a.entry_id WHERE a.id = ?",
         (file_id,),
     ).fetchone()
-    # 삭제 표시된 파일은 직원만 열람 가능(기록 확인용)
+    # 삭제 표시된 파일은 관리자만 열람 가능(기록 확인용)
     if not f or f["entry_type"] not in readable_types(user) or (f["deleted_at"] and user["role"] != "staff"):
         raise HTTPException(404)
     return storage.response(f["stored_name"], f["mime"], f["original_name"], bool(download))
 
 
-# ---------- 사용자 관리 (직원) ----------
+# ---------- 사용자 관리 (관리자) ----------
 
 @app.get("/users")
 def users_page(request: Request, user=Depends(staff_user), conn=Depends(get_db)):
