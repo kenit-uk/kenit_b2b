@@ -21,17 +21,11 @@
     </select>
     <button class="btn primary">{{ _('검색') }}</button>
   </div>
-  <details {% if f.status|length > 1 or f.installer or f.has_survey or f.has_quote or f.date_from or f.date_to %}open{% endif %}>
+  {# 위쪽 상태 칩으로 고른 상태를 검색할 때도 유지 #}
+  {% for s in f.status %}<input type="hidden" name="status" value="{{ s }}">{% endfor %}
+  <details {% if f.installer or f.has_survey or f.has_quote or f.date_from or f.date_to %}open{% endif %}>
     <summary>{{ _('상세 필터') }}</summary>
     <div class="filter-grid">
-      <fieldset>
-        <legend>{{ _('상태 (여러 개 선택 가능)') }}</legend>
-        <div class="checks">
-          {% for s in STATUSES %}
-            <label class="check"><input type="checkbox" name="status" value="{{ s }}" {% if s in f.status %}checked{% endif %}> {{ _(s) }}</label>
-          {% endfor %}
-        </div>
-      </fieldset>
       <label>{{ _('등록일 (부터)') }} <input type="date" name="date_from" value="{{ f.date_from }}"></label>
       <label>{{ _('등록일 (까지)') }} <input type="date" name="date_to" value="{{ f.date_to }}"></label>
       <label>{{ _('현장정보 작성 설치업자') }}

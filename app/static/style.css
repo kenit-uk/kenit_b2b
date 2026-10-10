@@ -131,8 +131,6 @@ legend { font-size: .88rem; font-weight: 600; color: #3b4656; margin-bottom: 6px
 .filters details { margin-top: 10px; }
 .filters summary { cursor: pointer; color: var(--primary); font-size: .9rem; font-weight: 600; }
 .filter-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
-.filter-grid fieldset { grid-column: 1 / -1; }
-.checks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .filters p { margin: 10px 0 0; }
 
 .house-list { display: flex; flex-direction: column; gap: 8px; }

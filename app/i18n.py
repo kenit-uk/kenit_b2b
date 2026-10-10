@@ -104,7 +104,6 @@ EN = {
     "오래된 등록순": "Oldest",
     "주소순": "Address A–Z",
     "상세 필터": "More filters",
-    "상태 (여러 개 선택 가능)": "Status (select any)",
     "등록일 (부터)": "Added from",
     "등록일 (까지)": "Added until",
     "현장정보 작성 설치업자": "Surveyed by installer",
