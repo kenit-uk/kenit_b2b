@@ -17,7 +17,6 @@
 
   {% if user %}
   {% set path = request.url.path %}
-  {% set cur_status = request.query_params.getlist('status') if path == '/houses' else [] %}
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
       <a class="brand" href="/houses">❄ {{ BRAND }}</a>
@@ -26,19 +25,10 @@
 
     <div class="sidebar-body" id="sidebar-body">
       <nav class="side-nav">
-        <a class="{% if path == '/houses' and not cur_status %}active{% endif %}" href="/houses">📋 {{ _('현장 목록') }}</a>
+        <a class="{% if path == '/houses' %}active{% endif %}" href="/houses">📋 {{ _('현장 목록') }}</a>
         {% if user.role == 'staff' %}
           <a class="{% if path == '/houses/new' %}active{% endif %}" href="/houses/new">＋ {{ _('새 집 등록') }}</a>
         {% endif %}
-      </nav>
-
-      <div class="side-section">{{ _('계약 상태') }}</div>
-      <nav class="side-nav statuses">
-        {% for s in STATUSES %}
-          <a class="{% if cur_status == [s] %}active{% endif %}" href="/houses?status={{ s|urlencode }}">
-            <i class="dot status-{{ loop.index }}"></i>{{ _(s) }}
-          </a>
-        {% endfor %}
       </nav>
 
       {% if user.role == 'staff' %}

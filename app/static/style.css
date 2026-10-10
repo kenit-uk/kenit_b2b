@@ -47,7 +47,6 @@ body.with-sidebar { display: grid; grid-template-columns: var(--side-w) minmax(0
 .side-nav a { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; font-size: .93rem; }
 .side-nav a:hover { background: rgba(255,255,255,.07); text-decoration: none; color: #fff; }
 .side-nav a.active { background: rgba(255,255,255,.14); color: #fff; font-weight: 700; }
-.side-nav .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
 .side-foot { margin-top: auto; padding: 14px 10px 4px; border-top: 1px solid rgba(255,255,255,.1); display: flex; flex-direction: column; gap: 8px; font-size: .88rem; }
 .side-foot .me { display: flex; align-items: center; gap: 8px; }
 .side-foot .me-name { color: #fff; font-weight: 600; }
