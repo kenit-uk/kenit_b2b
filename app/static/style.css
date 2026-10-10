@@ -30,17 +30,36 @@ h3 { font-size: 1rem; margin: 0 0 6px; }
 .small { font-size: .85rem; }
 .nowrap { white-space: nowrap; }
 
-/* 상단바 */
-.topbar {
-  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
-  padding: 10px 20px; background: #12243d; color: #fff;
+/* 왼쪽 사이드바 */
+:root { --side-w: 236px; --side-bg: #12243d; --side-ink: #c9d6e8; }
+body.with-sidebar { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); min-height: 100vh; }
+.sidebar {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  background: var(--side-bg); color: var(--side-ink); display: flex; flex-direction: column;
 }
-.topbar a { color: #dce6f5; }
-.brand { font-weight: 700; color: #fff !important; font-size: 1.05rem; }
-.topbar nav { display: flex; gap: 16px; flex: 1; }
-.me { display: flex; align-items: center; gap: 8px; font-size: .9rem; }
-.me form { margin: 0; }
-button.link { background: none; border: 0; color: #dce6f5; cursor: pointer; font: inherit; padding: 0; }
+.sidebar a { color: var(--side-ink); }
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 18px 10px; }
+.brand { font-weight: 800; color: #fff !important; font-size: 1.08rem; text-decoration: none !important; }
+.menu-toggle { display: none; background: none; border: 0; color: #fff; font-size: 1.4rem; cursor: pointer; padding: 2px 6px; }
+.sidebar-body { display: flex; flex-direction: column; flex: 1; padding: 0 10px 14px; }
+.side-section { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #7f93ad; padding: 16px 10px 6px; }
+.side-nav { display: flex; flex-direction: column; gap: 2px; }
+.side-nav a { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; font-size: .93rem; }
+.side-nav a:hover { background: rgba(255,255,255,.07); text-decoration: none; color: #fff; }
+.side-nav a.active { background: rgba(255,255,255,.14); color: #fff; font-weight: 700; }
+.side-nav .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+.side-foot { margin-top: auto; padding: 14px 10px 4px; border-top: 1px solid rgba(255,255,255,.1); display: flex; flex-direction: column; gap: 8px; font-size: .88rem; }
+.side-foot .me { display: flex; align-items: center; gap: 8px; }
+.side-foot .me-name { color: #fff; font-weight: 600; }
+.side-foot form { margin: 0; }
+button.link { background: none; border: 0; color: var(--side-ink); cursor: pointer; font: inherit; padding: 0; }
+button.link:hover { color: #fff; text-decoration: underline; }
+.lang-switch { display: inline-flex; gap: 10px; font-size: .85rem; }
+.lang-switch b { color: inherit; }
+.sidebar .lang-switch b { color: #fff; }
+.auth-lang { display: flex; justify-content: flex-end; padding: 12px 16px 0; }
+.page { min-width: 0; display: flex; flex-direction: column; }
+.page main { flex: 1; }
 
 .container { max-width: 1040px; margin: 0 auto; padding: 20px 16px 40px; }
 .auth { min-height: 85vh; display: grid; place-items: center; padding: 16px; }
@@ -190,14 +209,22 @@ table.history { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .code-box code { font-size: 1.05rem; background: #eef1f5; padding: 4px 10px; border-radius: 6px; user-select: all; }
 .code-box form { margin: 0; }
 
+@media (max-width: 860px) {
+  body.with-sidebar { display: block; }
+  .sidebar { position: sticky; top: 0; z-index: 20; height: auto; max-height: 100vh; }
+  .sidebar-head { padding: 12px 16px; }
+  .menu-toggle { display: block; }
+  .sidebar-body { display: none; }
+  .sidebar.open .sidebar-body { display: flex; }
+}
 @media (max-width: 720px) {
   .grid-2, .grid-3, .filter-grid { grid-template-columns: 1fr; }
   .house-row { flex-direction: column; align-items: flex-start; }
   .house-meta { align-items: flex-start; text-align: left; }
   .filter-main { flex-wrap: wrap; }
   .filter-main select { flex: 1; }
+  .filter-main input { flex-basis: 100%; }
   .status-form label, .status-form input { width: 100%; }
-  .topbar nav { order: 3; width: 100%; }
   .card { padding: 14px; }
   .history { display: block; overflow-x: auto; }
 }

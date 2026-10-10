@@ -6,7 +6,7 @@
   <title>{% block title %}{{ _('에어컨 설치 기록') }}{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body class="{% if user %}with-sidebar{% endif %}">
   {% macro lang_switch(cls='') -%}
     <span class="lang-switch {{ cls }}">
       {% for code, label in LANGS.items() %}
@@ -16,32 +16,74 @@
   {%- endmacro %}
 
   {% if user %}
-  <header class="topbar">
-    <a class="brand" href="/houses">❄ {{ _('설치 기록') }}</a>
-    <nav>
-      <a href="/houses">{{ _('현장 목록') }}</a>
-      {% if user.role == 'staff' %}
-        <a href="/houses/new">{{ _('+ 집 등록') }}</a>
-        <a href="/users">{{ _('사용자') }}</a>
-      {% endif %}
-    </nav>
-    <div class="me">
-      {{ lang_switch() }}
-      <span class="role role-{{ user.role }}">{{ _(ROLES[user.role]) }}</span>
-      <span class="me-name">{{ user.name }}</span>
-      <form method="post" action="/logout"><button class="link">{{ _('로그아웃') }}</button></form>
+  {% set path = request.url.path %}
+  {% set cur_status = request.query_params.getlist('status') if path == '/houses' else [] %}
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <a class="brand" href="/houses">❄ {{ _('설치 기록') }}</a>
+      <button type="button" class="menu-toggle" aria-controls="sidebar-body" aria-expanded="false" aria-label="{{ _('메뉴') }}">☰</button>
     </div>
-  </header>
+
+    <div class="sidebar-body" id="sidebar-body">
+      <nav class="side-nav">
+        <a class="{% if path == '/houses' and not cur_status %}active{% endif %}" href="/houses">📋 {{ _('현장 목록') }}</a>
+        {% if user.role == 'staff' %}
+          <a class="{% if path == '/houses/new' %}active{% endif %}" href="/houses/new">＋ {{ _('새 집 등록') }}</a>
+        {% endif %}
+      </nav>
+
+      <div class="side-section">{{ _('계약 상태') }}</div>
+      <nav class="side-nav statuses">
+        {% for s in STATUSES %}
+          <a class="{% if cur_status == [s] %}active{% endif %}" href="/houses?status={{ s|urlencode }}">
+            <i class="dot status-{{ loop.index }}"></i>{{ _(s) }}
+          </a>
+        {% endfor %}
+      </nav>
+
+      {% if user.role == 'staff' %}
+        <div class="side-section">{{ _('관리') }}</div>
+        <nav class="side-nav">
+          <a class="{% if path == '/users' %}active{% endif %}" href="/users">👥 {{ _('사용자 관리') }}</a>
+        </nav>
+      {% endif %}
+
+      <div class="side-foot">
+        <div class="me">
+          <span class="me-name">{{ user.name }}</span>
+          <span class="role role-{{ user.role }}">{{ _(ROLES[user.role]) }}</span>
+        </div>
+        {{ lang_switch() }}
+        <form method="post" action="/logout"><button class="link">{{ _('로그아웃') }}</button></form>
+      </div>
+    </div>
+  </aside>
   {% else %}
-  <div class="auth-lang">{{ lang_switch('dark') }}</div>
+  <div class="auth-lang">{{ lang_switch() }}</div>
   {% endif %}
 
-  <main class="{% block main_class %}container{% endblock %}">
-    {% for f in flashes %}
-      <div class="flash flash-{{ f.kind }}">{{ f.message }}</div>
-    {% endfor %}
-    {% block content %}{% endblock %}
-  </main>
-  <footer class="foot">{{ _('모든 시각은 런던 시간(Europe/London) 기준') }}</footer>
+  <div class="page">
+    <main class="{% block main_class %}container{% endblock %}">
+      {% for f in flashes %}
+        <div class="flash flash-{{ f.kind }}">{{ f.message }}</div>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="foot">{{ _('모든 시각은 런던 시간(Europe/London) 기준') }}</footer>
+  </div>
+
+  {% if user %}
+  <script>
+    // 휴대폰: ☰ 버튼으로 메뉴 열고 닫기
+    (function () {
+      const btn = document.querySelector('.menu-toggle');
+      const side = document.getElementById('sidebar');
+      btn.addEventListener('click', () => {
+        const open = side.classList.toggle('open');
+        btn.setAttribute('aria-expanded', open);
+      });
+    })();
+  </script>
+  {% endif %}
 </body>
 </html>

@@ -12,6 +12,8 @@ EN = {
     "+ 집 등록": "+ New property",
     "사용자": "Users",
     "로그아웃": "Log out",
+    "메뉴": "Menu",
+    "관리": "Admin",
     "모든 시각은 런던 시간(Europe/London) 기준": "All times are London time (Europe/London)",
     "직원": "Staff",
     "설치업자": "Installer",
