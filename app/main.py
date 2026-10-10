@@ -391,28 +391,12 @@ SORTS = {
 }
 
 
-def london_day_bound(day: str, end: bool) -> str | None:
-    """'YYYY-MM-DD'(런던 날짜)를 UTC ISO 경계값으로."""
-    try:
-        d = datetime.fromisoformat(day).replace(tzinfo=LONDON)
-    except ValueError:
-        return None
-    if end:
-        d = d.replace(hour=23, minute=59, second=59)
-    return d.astimezone(ZoneInfo("UTC")).isoformat(timespec="seconds")
-
-
 @app.get("/houses")
 def house_list(request: Request, user=Depends(current_user), conn=Depends(get_db)):
     p = request.query_params
     f = {
         "q": p.get("q", "").strip(),
         "status": [s for s in p.getlist("status") if s in C.STATUSES],
-        "installer": p.get("installer", ""),
-        "has_survey": p.get("has_survey", ""),
-        "has_quote": p.get("has_quote", ""),
-        "date_from": p.get("date_from", ""),
-        "date_to": p.get("date_to", ""),
         "sort": p.get("sort", "activity") if p.get("sort") in SORTS else "activity",
     }
 
@@ -428,19 +412,6 @@ def house_list(request: Request, user=Depends(current_user), conn=Depends(get_db
     if f["status"]:
         where.append(f"h.status IN ({','.join('?' * len(f['status']))})")
         params += f["status"]
-    if f["installer"].isdigit():
-        where.append("EXISTS (SELECT 1 FROM entries WHERE house_id = h.id AND type = 'survey' AND author_id = ?)")
-        params.append(int(f["installer"]))
-    for key, etype in (("has_survey", "survey"), ("has_quote", "quote")):
-        if f[key] in ("yes", "no"):
-            where.append(("" if f[key] == "yes" else "NOT ") +
-                         f"EXISTS (SELECT 1 FROM entries WHERE house_id = h.id AND type = '{etype}')")
-    if f["date_from"] and (bound := london_day_bound(f["date_from"], end=False)):
-        where.append("h.created_at >= ?")
-        params.append(bound)
-    if f["date_to"] and (bound := london_day_bound(f["date_to"], end=True)):
-        where.append("h.created_at <= ?")
-        params.append(bound)
 
     sql = f"""SELECT h.*,
                      (SELECT MAX(created_at) FROM audit_log WHERE house_id = h.id) AS last_activity,
@@ -450,10 +421,9 @@ def house_list(request: Request, user=Depends(current_user), conn=Depends(get_db
               ORDER BY {SORTS[f["sort"]][1]}, h.id DESC"""
     houses = conn.execute(sql, params).fetchall()
     counts = dict(conn.execute("SELECT status, COUNT(*) FROM houses GROUP BY status").fetchall())
-    installers = conn.execute("SELECT id, name FROM users WHERE role = 'installer' ORDER BY name").fetchall()
-    filtered = any([f["q"], f["status"], f["installer"], f["has_survey"], f["has_quote"], f["date_from"], f["date_to"]])
+    filtered = bool(f["q"] or f["status"])
     return render(request, "houses.html", user=user, houses=houses, counts=counts, total=sum(counts.values()),
-                  f=f, sorts=SORTS, installers=installers, filtered=filtered)
+                  f=f, sorts=SORTS, filtered=filtered)
 
 
 @app.get("/houses/new")

@@ -23,28 +23,6 @@
   </div>
   {# 위쪽 상태 칩으로 고른 상태를 검색할 때도 유지 #}
   {% for s in f.status %}<input type="hidden" name="status" value="{{ s }}">{% endfor %}
-  <details {% if f.installer or f.has_survey or f.has_quote or f.date_from or f.date_to %}open{% endif %}>
-    <summary>{{ _('상세 필터') }}</summary>
-    <div class="filter-grid">
-      <label>{{ _('등록일 (부터)') }} <input type="date" name="date_from" value="{{ f.date_from }}"></label>
-      <label>{{ _('등록일 (까지)') }} <input type="date" name="date_to" value="{{ f.date_to }}"></label>
-      <label>{{ _('현장정보 작성 설치업자') }}
-        <select name="installer">
-          <option value="">{{ _('전체') }}</option>
-          {% for i in installers %}<option value="{{ i.id }}" {% if f.installer == i.id|string %}selected{% endif %}>{{ i.name }}</option>{% endfor %}
-        </select>
-      </label>
-      {% for key, label in (('has_survey', '현장정보'), ('has_quote', '견적')) %}
-      <label>{{ _(label) }}
-        <select name="{{ key }}">
-          <option value="">{{ _('전체') }}</option>
-          <option value="yes" {% if f[key] == 'yes' %}selected{% endif %}>{{ _('있음') }}</option>
-          <option value="no" {% if f[key] == 'no' %}selected{% endif %}>{{ _('아직 없음') }}</option>
-        </select>
-      </label>
-      {% endfor %}
-    </div>
-  </details>
   {% if filtered %}
     <p class="muted small">{{ _('검색 결과 {n}건', n=houses|length) }} · <a href="/houses">{{ _('필터 초기화') }}</a></p>
   {% endif %}

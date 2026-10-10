@@ -128,9 +128,6 @@ legend { font-size: .88rem; font-weight: 600; color: #3b4656; margin-bottom: 6px
 .filter-main { display: flex; gap: 8px; }
 .filter-main input { flex: 1; }
 .filter-main select { width: auto; }
-.filters details { margin-top: 10px; }
-.filters summary { cursor: pointer; color: var(--primary); font-size: .9rem; font-weight: 600; }
-.filter-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
 .filters p { margin: 10px 0 0; }
 
 .house-list { display: flex; flex-direction: column; gap: 8px; }
@@ -215,7 +212,7 @@ table.history { width: 100%; border-collapse: collapse; font-size: .88rem; }
   .sidebar.open .sidebar-body { display: flex; }
 }
 @media (max-width: 720px) {
-  .grid-2, .grid-3, .filter-grid { grid-template-columns: 1fr; }
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
   .house-row { flex-direction: column; align-items: flex-start; }
   .house-meta { align-items: flex-start; text-align: left; }
   .filter-main { flex-wrap: wrap; }
