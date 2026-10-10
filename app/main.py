@@ -28,6 +28,8 @@ from .storage import storage
 from .i18n import LANGS, detect_lang, fmt_datetime, translate, translate_message
 
 APP_DIR = Path(__file__).resolve().parent
+# 서버리스에서는 서버 디스크에 저장한 사진이 사라지므로, 사진 저장소(R2)가 연결되어야만 첨부를 받는다
+UPLOADS_ENABLED = storage.direct or not ON_VERCEL
 LONDON = ZoneInfo(C.TIMEZONE)
 
 # 업로드 허용 형식. SVG/HTML 등 스크립트가 들어갈 수 있는 형식은 받지 않는다.
@@ -109,8 +111,9 @@ templates.env.globals.update(
     AUDIT_ACTIONS=C.AUDIT_ACTIONS,
     HOUSE_LABELS=C.HOUSE_LABELS,
     DIRECT_UPLOAD=storage.direct,
-    # 서버리스에서 DB나 사진 저장소가 연결되지 않으면 데이터가 사라지므로 화면에 경고를 띄운다
-    EPHEMERAL=ON_VERCEL and not (DATABASE_URL and storage.direct),
+    # 서버리스에서 DB가 연결되지 않으면 데이터가 사라지므로 화면에 경고를 띄운다
+    EPHEMERAL=ON_VERCEL and not DATABASE_URL,
+    UPLOADS_ENABLED=UPLOADS_ENABLED,
 )
 
 
@@ -252,6 +255,8 @@ def entry_fields(entry_type: str, form) -> dict:
 async def save_uploads(files: list, house_id: int) -> list[dict]:
     """업로드 파일을 저장소에 저장. 하나라도 문제가 있으면 이번에 저장한 파일을 정리하고 UserError."""
     saved: list[dict] = []
+    if not UPLOADS_ENABLED and any(isinstance(f, UploadFile) and f.filename for f in files):
+        raise UserError("사진 저장소가 아직 연결되지 않아 첨부할 수 없습니다. 내용만 저장해 주세요.")
     try:
         for f in files:
             if not isinstance(f, UploadFile) or not f.filename:
