@@ -29,9 +29,9 @@
 {% if houses %}
 <div class="house-list">
   {% for h in houses %}
-  <a class="card house-row" href="/houses/{{ h.id }}">
+  <a class="card house-row {% if h.unread %}is-new{% endif %}" href="/houses/{{ h.id }}">
     <div class="house-main">
-      <div class="house-addr">{{ h.address }}</div>
+      <div class="house-addr">{% if h.unread %}<span class="new-badge" title="{{ _('확인하지 않은 새 소식') }}">N</span> {% endif %}{{ h.address }}</div>
       <div class="muted small">
         {% if h.postcode %}<span class="postcode">{{ h.postcode }}</span>{% endif %}
         {% if h.landlord_name %} · {{ _('집주인 {name}', name=h.landlord_name) }}{% endif %}

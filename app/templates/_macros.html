@@ -1,3 +1,7 @@
+{% macro new_badge() -%}
+<span class="new-badge" title="{{ _('확인하지 않은 새 소식') }}">N</span>
+{%- endmacro %}
+
 {% macro status_badge(status) -%}
 <span class="badge status-{{ STATUSES.index(status) + 1 if status in STATUSES else 0 }}">{{ _(status) }}</span>
 {%- endmacro %}
@@ -103,14 +107,14 @@
   </label>
 {% endmacro %}
 
-{% macro history_table(rows, entry_type=None) %}
+{% macro history_table(rows, entry_type=None, new_ids=()) %}
   <table class="history">
     <thead><tr><th>{{ _('일시') }}</th><th>{{ _('작업') }}</th><th>{{ _('내용') }}</th><th>{{ _('작업자') }}</th></tr></thead>
     <tbody>
     {% for h in rows %}
       {% set et = entry_type or h.entry_type %}
-      <tr>
-        <td class="nowrap">{{ h.created_at|dt }}</td>
+      <tr class="{% if h.id in new_ids %}is-new{% endif %}">
+        <td class="nowrap">{% if h.id in new_ids %}{{ new_badge() }} {% endif %}{{ h.created_at|dt }}</td>
         <td class="nowrap">{{ _(AUDIT_ACTIONS.get(h.action, h.action)) }}</td>
         <td>
           {{ audit_detail(h, et) }}

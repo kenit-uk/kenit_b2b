@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
   role          TEXT NOT NULL CHECK (role IN ('staff', 'installer')),
   active        INTEGER NOT NULL DEFAULT 1,
   lang          TEXT,
+  seen_baseline INTEGER NOT NULL DEFAULT 0,  -- 가입 시점의 마지막 변경이력 번호(그 이전 내용은 새 소식으로 치지 않음)
   created_at    TEXT NOT NULL
 );
 
@@ -80,6 +81,14 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_audit_house ON audit_log(house_id);
+
+-- 사용자별로 각 현장의 변경이력을 어디까지 확인했는지 (N 표시용)
+CREATE TABLE IF NOT EXISTS house_views (
+  user_id      INTEGER NOT NULL REFERENCES users(id),
+  house_id     INTEGER NOT NULL REFERENCES houses(id),
+  last_seen_id INTEGER NOT NULL,
+  PRIMARY KEY (user_id, house_id)
+);
 """
 
 
@@ -109,8 +118,11 @@ def init_db() -> dict:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.executescript(SCHEMA)
     # 이전 버전 DB 호환: 언어 설정 컬럼 추가
-    if "lang" not in {r["name"] for r in conn.execute("PRAGMA table_info(users)")}:
+    user_cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+    if "lang" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN lang TEXT")
+    if "seen_baseline" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN seen_baseline INTEGER NOT NULL DEFAULT 0")
     created = {}
     with conn:
         for role in ("staff", "installer"):

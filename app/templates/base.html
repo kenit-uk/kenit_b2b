@@ -20,12 +20,12 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
       <a class="brand" href="/houses">❄ {{ BRAND }}</a>
-      <button type="button" class="menu-toggle" aria-controls="sidebar-body" aria-expanded="false" aria-label="{{ _('메뉴') }}">☰</button>
+      <button type="button" class="menu-toggle" aria-controls="sidebar-body" aria-expanded="false" aria-label="{{ _('메뉴') }}">☰{% if unread_total %}<span class="toggle-count">{{ unread_total }}</span>{% endif %}</button>
     </div>
 
     <div class="sidebar-body" id="sidebar-body">
       <nav class="side-nav">
-        <a class="{% if path == '/houses' %}active{% endif %}" href="/houses">📋 {{ _('현장 목록') }}</a>
+        <a class="{% if path == '/houses' %}active{% endif %}" href="/houses">📋 {{ _('현장 목록') }}{% if unread_total %}<span class="count" title="{{ _('확인하지 않은 현장') }}">{{ unread_total }}</span>{% endif %}</a>
         {% if user.role == 'staff' %}
           <a class="{% if path == '/houses/new' %}active{% endif %}" href="/houses/new">＋ {{ _('새 집 등록') }}</a>
         {% endif %}

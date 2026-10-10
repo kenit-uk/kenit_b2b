@@ -38,6 +38,12 @@
   {% endif %}
 </section>
 
+{% if new_logs %}
+<a class="new-notice" href="?tab=all#timeline">
+  <span class="new-badge">N</span> {{ _('마지막으로 확인한 뒤 새 소식 {n}건', n=new_logs|length) }} <span class="arrow">↓</span>
+</a>
+{% endif %}
+
 {% if writable %}
 {% set open_form = tab if tab in writable else writable[0] %}
 <section class="card" id="new">
@@ -58,7 +64,7 @@
 </section>
 {% endif %}
 
-<section>
+<section id="timeline">
   <div class="tabs links">
     <a class="tab {% if tab == 'all' %}active{% endif %}" href="?tab=all">{{ _('전체') }}</a>
     {% for t in types %}
@@ -78,19 +84,20 @@
   {% endif %}
 
   {% if tab == 'history' %}
-    <div class="card">{{ m.history_table(history) }}</div>
+    <div class="card">{{ m.history_table(history, new_ids=new_logs) }}</div>
   {% else %}
     {% for item in timeline %}
       {% if item.kind == 'status' %}
         {% set log = item.log %}
         <div class="timeline-status">
-          <span>🔁 {{ _('상태 변경') }} <b>{{ m.audit_detail(log) }}</b>{% if log.snapshot %} — {{ (log.snapshot|fromjson).note }}{% endif %}</span>
+          <span>{% if log.id in new_logs %}{{ m.new_badge() }} {% endif %}🔁 {{ _('상태 변경') }} <b>{{ m.audit_detail(log) }}</b>{% if log.snapshot %} — {{ (log.snapshot|fromjson).note }}{% endif %}</span>
           <span class="muted small">{{ log.created_at|dt }} · {{ log.actor_name }}</span>
         </div>
       {% else %}
         {% set e = item.entry %}
-        <article class="card entry entry-{{ e.type }}" id="entry-{{ e.id }}">
+        <article class="card entry entry-{{ e.type }} {% if e.id in new_entries %}is-new{% endif %}" id="entry-{{ e.id }}">
           <header class="entry-head">
+            {% if e.id in new_entries %}{{ m.new_badge() }}{% endif %}
             <span class="entry-type">{{ _(ENTRY_TYPES[e.type]) }}</span>
             <span class="entry-author">{{ e.author_name }} <span class="role role-{{ e.author_role }}">{{ _(ROLES[e.author_role]) }}</span></span>
             {% if can_edit(e) %}<a class="btn small" href="/entries/{{ e.id }}/edit">{{ _('수정') }}</a>{% endif %}

@@ -23,7 +23,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import constants as C
 from .auth import Forbidden, LoginRequired, current_user, hash_password, staff_user, verify_password
 from .config import COOKIE_SECURE, MAX_UPLOAD_BYTES, SECRET_KEY
-from .db import audit, get_db, get_setting, init_db, now, set_setting
+from .db import audit, connect, get_db, get_setting, init_db, now, set_setting
 from .storage import storage
 from .i18n import LANGS, detect_lang, fmt_datetime, translate, translate_message
 
@@ -128,6 +128,12 @@ def render(request: Request, name: str, user=None, status_code: int = 200, **ctx
     if ctx.get("message"):
         ctx["message"] = _(ctx["message"])
     here = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    if user is not None and "unread_total" not in ctx:
+        db = connect()
+        try:
+            ctx["unread_total"] = unread_count(db, user)
+        finally:
+            db.close()
     return templates.TemplateResponse(
         request, name,
         {"user": user, "flashes": flashes, "lang": lang, "_": _, "LANGS": LANGS, "here": here, **ctx},
@@ -178,6 +184,22 @@ def can_edit(user, entry) -> bool:
     if entry["author_id"] == user["id"]:
         return True
     return user["role"] == "staff" and entry["type"] in ("quote", "conversation")
+
+
+def unread_condition(user) -> tuple[str, list]:
+    """현장 h 에 이 사용자가 아직 확인하지 않은 활동(본인 작업 제외, 볼 수 있는 기록만)이 있는지 판단하는 SQL."""
+    types = readable_types(user)
+    sql = f"""EXISTS (
+        SELECT 1 FROM audit_log l LEFT JOIN entries e ON e.id = l.entry_id
+        WHERE l.house_id = h.id AND l.actor_id != ?
+          AND l.id > COALESCE((SELECT last_seen_id FROM house_views WHERE user_id = ? AND house_id = h.id), ?)
+          AND (l.entry_id IS NULL OR e.type IN ({",".join("?" * len(types))})))"""
+    return sql, [user["id"], user["id"], user["seen_baseline"], *types]
+
+
+def unread_count(conn, user) -> int:
+    sql, params = unread_condition(user)
+    return conn.execute(f"SELECT COUNT(*) FROM houses h WHERE {sql}", params).fetchone()[0]
 
 
 def get_house_or_404(conn, house_id: int):
@@ -369,7 +391,8 @@ async def signup(request: Request, conn=Depends(get_db)):
     try:
         with conn:
             cur = conn.execute(
-                "INSERT INTO users (email, name, phone, password_hash, role, lang, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                """INSERT INTO users (email, name, phone, password_hash, role, lang, seen_baseline, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(id), 0) FROM audit_log), ?)""",
                 (data["email"], data["name"], data["phone"], hash_password(password), role, lang, now()),
             )
     except sqlite3.IntegrityError:
@@ -384,7 +407,7 @@ async def signup(request: Request, conn=Depends(get_db)):
 # ---------- 집(현장) ----------
 
 SORTS = {
-    "activity": ("최근 활동순", "last_activity DESC"),
+    "activity": ("최근 활동순", "last_activity_id DESC"),
     "created": ("최근 등록순", "h.created_at DESC"),
     "oldest": ("오래된 등록순", "h.created_at ASC"),
     "address": ("주소순", "h.address COLLATE NOCASE ASC"),
@@ -413,13 +436,15 @@ def house_list(request: Request, user=Depends(current_user), conn=Depends(get_db
         where.append(f"h.status IN ({','.join('?' * len(f['status']))})")
         params += f["status"]
 
-    sql = f"""SELECT h.*,
+    unread_sql, unread_params = unread_condition(user)
+    sql = f"""SELECT h.*, {unread_sql} AS unread,
                      (SELECT MAX(created_at) FROM audit_log WHERE house_id = h.id) AS last_activity,
+                     (SELECT MAX(id) FROM audit_log WHERE house_id = h.id) AS last_activity_id,
                      (SELECT COUNT(*) FROM entries WHERE house_id = h.id AND type = 'survey') AS survey_count,
                      (SELECT COUNT(*) FROM entries WHERE house_id = h.id AND type = 'quote') AS quote_count
               FROM houses h WHERE {" AND ".join(where)}
               ORDER BY {SORTS[f["sort"]][1]}, h.id DESC"""
-    houses = conn.execute(sql, params).fetchall()
+    houses = conn.execute(sql, unread_params + params).fetchall()
     counts = dict(conn.execute("SELECT status, COUNT(*) FROM houses GROUP BY status").fetchall())
     filtered = bool(f["q"] or f["status"])
     return render(request, "houses.html", user=user, houses=houses, counts=counts, total=sum(counts.values()),
@@ -476,9 +501,11 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
         (house_id, *types),
     ).fetchall()
 
-    timeline = [{"kind": "entry", "at": e["created_at"], "entry": e} for e in entries]
-    timeline += [{"kind": "status", "at": h["created_at"], "log": h} for h in history if h["action"] == "status"]
-    timeline.sort(key=lambda x: x["at"], reverse=True)
+    # 정렬은 시각(초 단위)이 아니라 변경이력 번호로 해서 같은 초에 생긴 항목도 순서가 정확하다
+    created_log = {h["entry_id"]: h["id"] for h in history if h["action"] == "entry_create"}
+    timeline = [{"kind": "entry", "order": created_log.get(e["id"], 0), "entry": e} for e in entries]
+    timeline += [{"kind": "status", "order": h["id"], "log": h} for h in history if h["action"] == "status"]
+    timeline.sort(key=lambda x: x["order"], reverse=True)
     if tab in C.ENTRY_TYPES:
         timeline = [t for t in timeline if t["kind"] == "entry" and t["entry"]["type"] == tab]
     elif tab == "status":
@@ -497,11 +524,27 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
 
         timeline = [t for t in timeline if matches(t)]
 
+    # 마지막으로 본 뒤에 다른 사람이 한 활동은 N 표시, 그리고 지금 본 것으로 기록
+    seen = conn.execute("SELECT last_seen_id FROM house_views WHERE user_id = ? AND house_id = ?",
+                        (user["id"], house_id)).fetchone()
+    last_seen = seen["last_seen_id"] if seen else user["seen_baseline"]
+    fresh = [h for h in history if h["id"] > last_seen and h["actor_id"] != user["id"]]
+    new_logs = {h["id"] for h in fresh}
+    new_entries = {h["entry_id"] for h in fresh if h["entry_id"]}
+    with conn:
+        conn.execute(
+            """INSERT INTO house_views (user_id, house_id, last_seen_id)
+               VALUES (?, ?, (SELECT COALESCE(MAX(id), 0) FROM audit_log WHERE house_id = ?))
+               ON CONFLICT(user_id, house_id) DO UPDATE SET last_seen_id = MAX(last_seen_id, excluded.last_seen_id)""",
+            (user["id"], house_id, house_id),
+        )
+
     type_counts = {t: sum(1 for e in entries if e["type"] == t) for t in types}
     writable = [t for t in C.ENTRY_TYPES if can_write(user, t)]
     return render(
         request, "house.html", user=user, house=house, timeline=timeline, files=files, history=history,
         tab=tab, q=q, types=types, type_counts=type_counts, writable=writable,
+        new_logs=new_logs, new_entries=new_entries,
         can_edit=lambda e: can_edit(user, e),
     )
 
