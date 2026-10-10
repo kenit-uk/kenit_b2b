@@ -102,7 +102,6 @@ EN = {
     "오래된 등록순": "Oldest",
     "주소순": "Address A–Z",
     "검색 결과 {n}건": "{n} result(s)",
-    "필터 초기화": "Reset filters",
     "집주인 {name}": "Landlord {name}",
     "현장정보 {n} · 견적 {m}": "Surveys {n} · Quotes {m}",
     "최근 {when}": "Last activity {when}",

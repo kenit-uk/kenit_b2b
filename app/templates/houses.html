@@ -24,7 +24,7 @@
   {# 위쪽 상태 칩으로 고른 상태를 검색할 때도 유지 #}
   {% for s in f.status %}<input type="hidden" name="status" value="{{ s }}">{% endfor %}
   {% if filtered %}
-    <p class="muted small">{{ _('검색 결과 {n}건', n=houses|length) }} · <a href="/houses">{{ _('필터 초기화') }}</a></p>
+    <p class="muted small">{{ _('검색 결과 {n}건', n=houses|length) }}</p>
   {% endif %}
 </form>
 
