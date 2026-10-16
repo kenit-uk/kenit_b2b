@@ -6,12 +6,38 @@
   <h1>❄ {{ BRAND }}</h1>
   <p class="muted">{{ _('관리자·매니저·설치업자 전용') }}</p>
   {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
-  <form method="post" action="/login" class="stack">
+
+  {% set use_email = email or not SMS_ENABLED %}
+  {% if SMS_ENABLED %}
+  <div class="seg auth-tabs" role="tablist">
+    <a href="#phone" class="{% if not use_email %}active{% endif %}" data-tab="phone">{{ _('휴대폰 번호') }}</a>
+    <a href="#email" class="{% if use_email %}active{% endif %}" data-tab="email">{{ _('이메일') }}</a>
+  </div>
+
+  <form method="post" action="/login/phone" class="stack auth-pane {% if use_email %}hidden{% endif %}" id="pane-phone">
     <input type="hidden" name="next" value="{{ next }}">
-    <label>{{ _('이메일') }} <input type="email" name="email" value="{{ email or '' }}" required autofocus autocomplete="username"></label>
+    <label>{{ _('휴대폰 번호') }}
+      <input type="tel" name="phone" value="{{ phone or '' }}" placeholder="07700 900123" inputmode="tel" autocomplete="tel" required {% if not use_email %}autofocus{% endif %}>
+    </label>
+    <p class="muted small">{{ _('문자로 받은 6자리 코드로 로그인합니다. 비밀번호가 필요 없습니다.') }}</p>
+    <button class="btn primary">{{ _('문자로 코드 받기') }}</button>
+  </form>
+  {% endif %}
+
+  <form method="post" action="/login" class="stack auth-pane {% if not use_email %}hidden{% endif %}" id="pane-email">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>{{ _('이메일') }} <input type="email" name="email" value="{{ email or '' }}" required {% if use_email %}autofocus{% endif %} autocomplete="username"></label>
     <label>{{ _('비밀번호') }} <input type="password" name="password" required autocomplete="current-password"></label>
     <button class="btn primary">{{ _('로그인') }}</button>
   </form>
   <p class="muted small">{{ _('계정이 없나요?') }} <a href="/signup">{{ _('초대코드로 가입') }}</a></p>
 </div>
+<script>
+  document.querySelectorAll('.auth-tabs a').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelectorAll('.auth-tabs a').forEach(x => x.classList.toggle('active', x === a));
+    document.querySelectorAll('.auth-pane').forEach(p => p.classList.toggle('hidden', p.id !== 'pane-' + a.dataset.tab));
+    const f = document.querySelector('#pane-' + a.dataset.tab + ' input:not([type=hidden])'); if (f) f.focus();
+  }));
+</script>
 {% endblock %}

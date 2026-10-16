@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ _('코드 입력') }} · {{ BRAND }}{% endblock %}
+{% block main_class %}auth{% endblock %}
+{% block content %}
+<div class="card auth-card">
+  <h1>{{ _('코드 입력') }}</h1>
+  <p class="muted">{{ _('{phone}(으)로 6자리 코드를 보냈습니다.', phone=masked) }}</p>
+  {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+  {% if notice %}<div class="flash flash-ok">{{ _(notice) }}</div>{% endif %}
+  <form method="post" action="/login/phone/verify" class="stack">
+    <input type="hidden" name="next" value="{{ next }}">
+    <input class="code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}"
+           maxlength="7" placeholder="••••••" required autofocus aria-label="{{ _('6자리 코드') }}">
+    <button class="btn primary">{{ _('로그인') }}</button>
+  </form>
+  <form method="post" action="/login/phone/resend" class="resend">
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="link-btn">{{ _('코드 다시 받기') }}</button>
+  </form>
+  <p class="muted small">{{ _('문자가 오지 않나요? 등록되지 않은 번호에는 문자가 가지 않습니다. 관리자에게 번호 등록을 요청하세요.') }}</p>
+  <p class="small"><a href="/login">← {{ _('다른 번호로 로그인') }}</a></p>
+</div>
+<script>
+  // 6자리를 다 넣으면 바로 로그인
+  const c = document.querySelector('.code-input');
+  c.addEventListener('input', () => { if (c.value.replace(/\D/g, '').length === 6) c.form.requestSubmit(); });
+</script>
+{% endblock %}

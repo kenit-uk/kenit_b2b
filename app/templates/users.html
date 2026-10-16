@@ -26,8 +26,8 @@
           <span class="role role-{{ u.role }}">{{ _(ROLES[u.role]) }}</span>
           {% endif %}
         </td>
-        <td data-label="{{ _('이메일') }}">{{ u.email }}</td>
-        <td data-label="{{ _('연락처') }}">{{ u.phone or '—' }}</td>
+        <td data-label="{{ _('이메일') }}">{{ u.email or '—' }}</td>
+        <td data-label="{{ _('연락처') }}">{{ (u.phone_e164|phone) or u.phone or '—' }}{% if u.phone_e164 %} <span class="sms-badge" title="{{ _('문자 로그인 사용 중') }}">SMS</span>{% endif %}</td>
         <td class="nowrap" data-label="{{ _('가입일') }}">{{ u.created_at|dt }}</td>
         <td data-label="{{ _('상태') }}">{{ _('활성') if u.active else _('비활성') }}</td>
         <td class="cell-actions">

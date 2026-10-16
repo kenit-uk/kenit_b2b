@@ -233,6 +233,16 @@ table.history { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .code-box code { font-size: 1.05rem; background: #eef1f5; padding: 4px 10px; border-radius: 6px; user-select: all; }
 .code-box form { margin: 0; }
 
+/* 문자 로그인 */
+.auth-tabs { margin: 4px 0 14px; }
+.auth-tabs a { padding: 9px; }
+.code-input { font-size: 1.6rem !important; letter-spacing: .5em; text-align: center; font-variant-numeric: tabular-nums; padding: 12px; }
+.resend { margin: 10px 0 0; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--primary); font: inherit; font-weight: 600; cursor: pointer; }
+.ok-text { color: var(--ok-ink); font-weight: 600; }
+.sms-badge { font-size: .68rem; font-weight: 800; color: #1f6b3a; background: var(--ok-bg); padding: 1px 6px; border-radius: 99px; }
+.section-title { margin: 20px 0 8px; }
+
 /* 휴대폰 전용 요소 (PC에서는 숨김) */
 .mobile-top, .tabbar, .fab { display: none; }
 .me-name-big { font-size: 1.2rem; font-weight: 800; margin-bottom: 4px; }

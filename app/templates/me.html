@@ -2,10 +2,36 @@
 {% block title %}{{ _('내 정보') }} · {{ BRAND }}{% endblock %}
 {% block content %}
 <div class="page-head"><h1>{{ _('내 정보') }}</h1></div>
+{% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="flash flash-ok">{{ _(notice) }}</div>{% endif %}
 <section class="card me-card">
   <div class="me-name-big">{{ user.name }} <span class="role role-{{ user.role }}">{{ _(ROLES[user.role]) }}</span></div>
-  <div class="muted">{{ user.email }}{% if user.phone %} · {{ user.phone }}{% endif %}</div>
+  <div class="muted">{{ user.email or '' }}</div>
 </section>
+
+<section class="card">
+  <h2>{{ _('휴대폰 번호') }}</h2>
+  {% if user.phone_e164 %}
+    <p><b>{{ user.phone_e164|phone }}</b> · <span class="ok-text">{{ _('문자 로그인 사용 중') }}</span></p>
+  {% else %}
+    <p class="muted small">{{ _('번호를 등록하면 비밀번호 없이 문자 코드로 로그인할 수 있습니다.') }}</p>
+  {% endif %}
+  {% if SMS_ENABLED %}
+    {% if pending %}
+      <form method="post" action="/me/phone/verify" class="stack">
+        <p class="muted small">{{ _('{phone}(으)로 6자리 코드를 보냈습니다.', phone=pending) }}</p>
+        <input class="code-input" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="••••••" required autofocus aria-label="{{ _('6자리 코드') }}">
+        <button class="btn primary">{{ _('번호 확인') }}</button>
+      </form>
+    {% else %}
+      <form method="post" action="/me/phone" class="row">
+        <input type="tel" name="phone" value="{{ phone_input or '' }}" placeholder="07700 900123" inputmode="tel" autocomplete="tel" required>
+        <button class="btn">{{ _('번호 바꾸기') if user.phone_e164 else _('번호 등록') }}</button>
+      </form>
+    {% endif %}
+  {% endif %}
+</section>
+
 <section class="card">
   <h2>{{ _('언어') }}</h2>
   <div class="seg">

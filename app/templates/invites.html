@@ -2,6 +2,29 @@
 {% block title %}{{ _('초대하기') }} · {{ BRAND }}{% endblock %}
 {% block content %}
 <div class="page-head"><h1>{{ _('초대하기') }}</h1></div>
+{% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+
+<section class="card">
+  <h2>{{ _('휴대폰 번호로 등록') }}</h2>
+  <p class="muted small">{{ _('번호를 등록해 두면 그 사람은 가입 절차 없이, 문자로 받은 코드로 바로 로그인합니다.') }}</p>
+  <form method="post" action="/invites/phone" class="stack">
+    <div class="grid-3">
+      <label>{{ _('이름') }} <input name="name" value="{{ form.name or '' }}" required></label>
+      <label>{{ _('휴대폰 번호') }} <input type="tel" name="phone" value="{{ form.phone or '' }}" placeholder="07700 900123" inputmode="tel" required></label>
+      <label>{{ _('역할') }}
+        <select name="role">
+          {% for r in roles %}<option value="{{ r }}" {% if form.role == r %}selected{% endif %}>{{ _(ROLES[r]) }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    {% if SMS_ENABLED %}
+    <label class="check"><input type="checkbox" name="notify" value="1" {% if form.notify is not defined or form.notify %}checked{% endif %}> {{ _('로그인 안내 문자 보내기') }}</label>
+    {% endif %}
+    <button class="btn primary">{{ _('사람 등록') }}</button>
+  </form>
+</section>
+
+<h2 class="section-title">{{ _('초대 링크') }}</h2>
 <p class="muted">{{ _('초대 링크를 보내면 받은 사람이 링크를 눌러 바로 가입합니다. 초대코드는 가입할 때 자동으로 채워집니다.') }}</p>
 
 {% for role, code in codes.items() %}

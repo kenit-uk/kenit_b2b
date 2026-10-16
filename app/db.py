@@ -3,6 +3,7 @@
 두 DB에서 같은 SQL이 돌도록 ? 자리표시자로 작성하고, 차이 나는 부분만 이 파일에서 맞춘다.
 """
 import json
+import re
 import secrets
 import sqlite3
 from datetime import datetime, timezone
@@ -24,9 +25,10 @@ else:
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
   id            {pk},
-  email         TEXT NOT NULL UNIQUE {nocase},
+  email         TEXT UNIQUE {nocase},  -- 휴대폰으로만 가입한 사람은 비어 있음
   name          TEXT NOT NULL,
   phone         TEXT,
+  phone_e164    TEXT,  -- 문자 로그인용 인증된 번호 (+447700900123)
   password_hash TEXT NOT NULL,
   role          TEXT NOT NULL CHECK (role IN ('staff', 'manager', 'installer')),
   active        INTEGER NOT NULL DEFAULT 1,
@@ -34,6 +36,19 @@ CREATE TABLE IF NOT EXISTS users (
   seen_baseline INTEGER NOT NULL DEFAULT 0,  -- 가입 시점의 마지막 변경이력 번호(그 이전 내용은 새 소식으로 치지 않음)
   created_at    TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS phone_codes (
+  id          {pk},
+  phone       TEXT NOT NULL,
+  purpose     TEXT NOT NULL,  -- login: 로그인, verify: 내 정보에서 번호 등록
+  user_id     INTEGER,
+  code_hash   TEXT NOT NULL,
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL,
+  used_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_phone_codes_phone ON phone_codes(phone);
 
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
@@ -201,6 +216,10 @@ def init_db() -> dict:
                 conn.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check")
                 conn.execute("ALTER TABLE users ADD CONSTRAINT users_role_check "
                              "CHECK (role IN ('staff', 'manager', 'installer'))")
+                # 문자 로그인: 이메일 없이 휴대폰으로만 가입 가능, 인증된 번호 칸
+                conn.execute("ALTER TABLE users ALTER COLUMN email DROP NOT NULL")
+                conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_e164 TEXT")
+                conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone_e164)")
         else:
             conn.raw.execute("PRAGMA journal_mode = WAL")
             conn.raw.executescript(SCHEMA.format(pk="INTEGER PRIMARY KEY AUTOINCREMENT", nocase="COLLATE NOCASE"))
@@ -210,8 +229,13 @@ def init_db() -> dict:
                 conn.execute("ALTER TABLE users ADD COLUMN lang TEXT")
             if "seen_baseline" not in user_cols:
                 conn.execute("ALTER TABLE users ADD COLUMN seen_baseline INTEGER NOT NULL DEFAULT 0")
+            if "phone_e164" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN phone_e164 TEXT")
             conn.raw.commit()
-            _sqlite_allow_manager(conn)
+            _sqlite_upgrade_users(conn)
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone_e164)")
+            conn.raw.commit()
+        _backfill_login_phones(conn)
         with conn:
             for role in ("staff", "manager", "installer"):
                 code = secrets.token_urlsafe(9)
@@ -224,15 +248,35 @@ def init_db() -> dict:
     return created
 
 
-def _sqlite_allow_manager(conn: Conn) -> None:
-    """이전 SQLite DB의 users 테이블은 역할 제약에 manager가 없다. SQLite는 제약만 바꿀 수 없어 테이블을 다시 만든다."""
+def _backfill_login_phones(conn: Conn) -> None:
+    """문자 로그인 도입 전에 가입한 사람: 가입 때 적은 연락처를 로그인 번호로 한 번만 옮긴다."""
+    from .sms import normalize_phone
+
+    if conn.execute("SELECT 1 FROM settings WHERE key = 'phone_backfill_done'").fetchone():
+        return
+    with conn:
+        taken = {r["phone_e164"] for r in conn.execute("SELECT phone_e164 FROM users WHERE phone_e164 IS NOT NULL")}
+        for r in conn.execute("SELECT id, phone FROM users WHERE phone_e164 IS NULL AND phone IS NOT NULL").fetchall():
+            e164 = normalize_phone(r["phone"])
+            if e164 and e164 not in taken:
+                conn.execute("UPDATE users SET phone_e164 = ? WHERE id = ?", (e164, r["id"]))
+                taken.add(e164)
+        conn.execute("INSERT INTO settings (key, value) VALUES ('phone_backfill_done', '1') ON CONFLICT(key) DO NOTHING")
+
+
+def _sqlite_upgrade_users(conn: Conn) -> None:
+    """이전 SQLite DB의 users 테이블을 지금 구조로 다시 만든다(매니저 역할 허용, 이메일 선택 입력).
+    SQLite는 제약 조건만 바꿀 수 없어서 새 테이블에 옮겨 담는다. 데이터와 id는 그대로 유지된다."""
     sql = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").fetchone()["sql"]
-    if "'manager'" in sql:
+    email_required = re.search(r"email\s+TEXT\s+NOT\s+NULL", sql)
+    if "'manager'" in sql and not email_required:
         return
     cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)")]
-    new_sql = sql.replace("CREATE TABLE users", "CREATE TABLE users_new", 1).replace(
-        "CHECK (role IN ('staff', 'installer'))", "CHECK (role IN ('staff', 'manager', 'installer'))")
-    assert "'manager'" in new_sql
+    users_def = re.search(r"CREATE TABLE IF NOT EXISTS users \(.*?\n\);", SCHEMA, re.S).group(0)
+    new_sql = users_def.replace("CREATE TABLE IF NOT EXISTS users", "CREATE TABLE users_new", 1).format(
+        pk="INTEGER PRIMARY KEY AUTOINCREMENT", nocase="COLLATE NOCASE")
+    new_cols = re.findall(r"^\s+(\w+)\s+[A-Z]", new_sql, re.M)
+    cols = [c for c in cols if c in new_cols]
     conn.raw.execute("PRAGMA foreign_keys = OFF")
     try:
         with conn:

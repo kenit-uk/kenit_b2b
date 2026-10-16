@@ -35,6 +35,13 @@ python3.12 -m venv .venv
 - **언어**: 상단의 한국어/English 링크로 전환하며 계정에 저장됩니다. 처음 접속 시 브라우저 언어가 한국어면 한국어, 그 외에는 영어로 보입니다. 화면 문구는 [app/i18n.py](app/i18n.py)에서 수정합니다. 사용자가 입력한 내용(메모·대화 등)은 번역하지 않습니다.
 - 업로드: JPG/PNG/WEBP/GIF/HEIC, MP4/MOV, PDF. 파일당 최대 25MB(`MAX_UPLOAD_MB`).
 
+## 테스트
+
+```bash
+tests/run.sh                                           # SQLite
+TEST_PG_URL=postgresql://... tests/run.sh               # SQLite + PostgreSQL (그 DB는 매번 비워짐)
+```
+
 ## 설정 (환경변수)
 
 | 변수 | 기본값 | 설명 |
@@ -48,6 +55,8 @@ python3.12 -m venv .venv
 | `S3_ENDPOINT` | 없음 | R2: `https://<계정ID>.r2.cloudflarestorage.com` |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | 없음 | R2 API 토큰(Object Read & Write) |
 | `S3_REGION` | `auto` | R2는 `auto` |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | 없음 | 문자 인증 발송(Twilio). 없으면 로컬에서는 코드가 서버 로그에 찍히는 시험 모드, Vercel에서는 문자 로그인이 꺼짐 |
+| `TWILIO_FROM` | 없음 | 발신 번호(+44…) 또는 영문 발신자명(예: `Kenit`). `TWILIO_MESSAGING_SERVICE_SID`를 대신 써도 됨 |
 
 ## 배포와 데이터 보호
 

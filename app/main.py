@@ -25,6 +25,7 @@ from .auth import Forbidden, LoginRequired, admin_user, current_user, hash_passw
 from .config import COOKIE_SECURE, DATABASE_URL, MAX_UPLOAD_BYTES, ON_VERCEL, SECRET_KEY
 from .db import IntegrityError, audit, connect, ensure_db, get_db, get_setting, now, set_setting
 from .storage import storage
+from . import sms
 from .i18n import LANGS, detect_lang, fmt_datetime, translate, translate_message
 
 APP_DIR = Path(__file__).resolve().parent
@@ -102,6 +103,7 @@ templates.env.filters["dt"] = fmt_dt
 templates.env.filters["localdt"] = fmt_local
 templates.env.filters["size"] = fmt_size
 templates.env.filters["fromjson"] = lambda s: json.loads(s) if s else {}
+templates.env.filters["phone"] = sms.format_phone
 templates.env.globals.update(
     BRAND=C.BRAND,
     STATUSES=C.STATUSES,
@@ -112,6 +114,7 @@ templates.env.globals.update(
     AUDIT_ACTIONS=C.AUDIT_ACTIONS,
     HOUSE_LABELS=C.HOUSE_LABELS,
     DIRECT_UPLOAD=storage.direct,
+    SMS_ENABLED=sms.SMS_ENABLED,
     # 서버리스에서 DB가 연결되지 않으면 데이터가 사라지므로 화면에 경고를 띄운다
     EPHEMERAL=ON_VERCEL and not DATABASE_URL,
     UPLOADS_ENABLED=UPLOADS_ENABLED,
@@ -379,10 +382,71 @@ async def login(request: Request, conn=Depends(get_db)):
     if not user["active"]:
         return render(request, "login.html", next=next_url, email=email,
                       error="비활성화된 계정입니다. 관리자에게 문의하세요.", status_code=403)
+    return start_session(request, user, next_url)
+
+
+def start_session(request: Request, user, next_url: str = "/houses"):
     lang = user["lang"] or detect_lang(request)
     request.session.clear()
     request.session.update(user_id=user["id"], lang=lang)
-    return redirect(next_url)
+    return redirect(safe_next(next_url))
+
+
+def code_text(request: Request, kind: str) -> str:
+    """문자 본문. 마지막 줄은 안드로이드 크롬이 코드를 자동으로 채우는 형식(@도메인 #코드)."""
+    lang = detect_lang(request)
+    head = translate(lang, "{brand} 로그인 코드: {{code}} (10분간 유효)" if kind == "login"
+                     else "{brand} 휴대폰 번호 확인 코드: {{code}} (10분간 유효)", brand="Kenit")
+    return f"{head}\n\n@{request.url.hostname} #{{code}}"
+
+
+@app.post("/login/phone")
+async def login_phone(request: Request, conn=Depends(get_db)):
+    form = await request.form()
+    raw = form_str(form, "phone", 40)
+    next_url = safe_next(form_str(form, "next") or "/houses")
+    phone = sms.normalize_phone(raw)
+    if not phone:
+        return render(request, "login.html", next=next_url, phone=raw, error="휴대폰 번호를 확인하세요.", status_code=400)
+    user = conn.execute("SELECT id, active FROM users WHERE phone_e164 = ?", (phone,)).fetchone()
+    # 등록되지 않았거나 비활성화된 번호에는 문자를 보내지 않는다(비용·악용 방지). 화면은 같게 보여준다.
+    if user and user["active"]:
+        error = sms.request_code(conn, phone, "login", code_text(request, "login"))
+        if error and "1분" not in error:
+            return render(request, "login.html", next=next_url, phone=raw, error=error, status_code=429)
+    request.session["otp_phone"] = phone
+    return render(request, "login_code.html", next=next_url, masked=sms.mask_phone(phone))
+
+
+@app.post("/login/phone/verify")
+async def login_phone_verify(request: Request, conn=Depends(get_db)):
+    form = await request.form()
+    next_url = safe_next(form_str(form, "next") or "/houses")
+    phone = request.session.get("otp_phone")
+    if not phone:
+        return redirect("/login")
+    error = sms.check_code(conn, phone, "login", form_str(form, "code", 20))
+    user = conn.execute("SELECT * FROM users WHERE phone_e164 = ?", (phone,)).fetchone()
+    if not error and not user:
+        error = "코드가 만료되었습니다. 코드를 다시 받으세요."
+    if error:
+        return render(request, "login_code.html", next=next_url, masked=sms.mask_phone(phone), error=error, status_code=400)
+    if not user["active"]:
+        return render(request, "login.html", next=next_url, error="비활성화된 계정입니다. 관리자에게 문의하세요.", status_code=403)
+    return start_session(request, user, next_url)
+
+
+@app.post("/login/phone/resend")
+async def login_phone_resend(request: Request, conn=Depends(get_db)):
+    form = await request.form()
+    next_url = safe_next(form_str(form, "next") or "/houses")
+    phone = request.session.get("otp_phone")
+    if not phone:
+        return redirect("/login")
+    user = conn.execute("SELECT active FROM users WHERE phone_e164 = ?", (phone,)).fetchone()
+    error = sms.request_code(conn, phone, "login", code_text(request, "login")) if user and user["active"] else None
+    return render(request, "login_code.html", next=next_url, masked=sms.mask_phone(phone),
+                  error=error, notice=None if error else "코드를 다시 보냈습니다.")
 
 
 @app.post("/logout")
@@ -396,6 +460,41 @@ def logout(request: Request):
 @app.get("/me")
 def me_page(request: Request, user=Depends(current_user)):
     return render(request, "me.html", user=user)
+
+
+@app.post("/me/phone")
+async def me_phone(request: Request, user=Depends(current_user), conn=Depends(get_db)):
+    raw = form_str(await request.form(), "phone", 40)
+    phone = sms.normalize_phone(raw)
+    if not phone:
+        return render(request, "me.html", user=user, phone_input=raw, error="휴대폰 번호를 확인하세요.", status_code=400)
+    other = conn.execute("SELECT id FROM users WHERE phone_e164 = ? AND id != ?", (phone, user["id"])).fetchone()
+    if other:
+        return render(request, "me.html", user=user, phone_input=raw, error="이미 다른 계정에 등록된 번호입니다.", status_code=400)
+    error = sms.request_code(conn, phone, "verify", code_text(request, "verify"), user_id=user["id"])
+    if error and "1분" not in error:
+        return render(request, "me.html", user=user, phone_input=raw, error=error, status_code=429)
+    request.session["verify_phone"] = phone
+    return render(request, "me.html", user=user, pending=sms.mask_phone(phone), notice=error)
+
+
+@app.post("/me/phone/verify")
+async def me_phone_verify(request: Request, user=Depends(current_user), conn=Depends(get_db)):
+    phone = request.session.get("verify_phone")
+    if not phone:
+        return redirect("/me")
+    error = sms.check_code(conn, phone, "verify", form_str(await request.form(), "code", 20), user_id=user["id"])
+    if error:
+        return render(request, "me.html", user=user, pending=sms.mask_phone(phone), error=error, status_code=400)
+    try:
+        with conn:
+            conn.execute("UPDATE users SET phone_e164 = ?, phone = ? WHERE id = ?",
+                         (phone, sms.format_phone(phone), user["id"]))
+    except IntegrityError:
+        return render(request, "me.html", user=user, error="이미 다른 계정에 등록된 번호입니다.", status_code=400)
+    request.session.pop("verify_phone", None)
+    flash(request, "휴대폰 번호를 등록했습니다. 이제 문자 코드로 로그인할 수 있습니다.")
+    return redirect("/me")
 
 
 @app.get("/lang/{code}")
@@ -814,8 +913,46 @@ def users_page(request: Request, user=Depends(office_user), conn=Depends(get_db)
 
 @app.get("/invites")
 def invites_page(request: Request, user=Depends(office_user), conn=Depends(get_db)):
+    return render_invites(request, conn, user)
+
+
+def render_invites(request, conn, user, form=None, error=None, status_code=200):
     codes = {r: get_setting(conn, f"invite_code_{r}") for r in C.MANAGEABLE[user["role"]]}
-    return render(request, "invites.html", user=user, codes=codes)
+    return render(request, "invites.html", user=user, codes=codes, roles=C.MANAGEABLE[user["role"]],
+                  form=form or {"role": "installer"}, error=error, status_code=status_code)
+
+
+@app.post("/invites/phone")
+async def invite_by_phone(request: Request, user=Depends(office_user), conn=Depends(get_db)):
+    """휴대폰 번호를 미리 등록해 두면, 그 사람은 문자 코드로 바로 로그인할 수 있다."""
+    form = await request.form()
+    data = {"name": form_str(form, "name", 100), "phone": form_str(form, "phone", 40), "role": form_str(form, "role", 20),
+            "notify": form.get("notify") == "1"}
+    if data["role"] not in C.MANAGEABLE[user["role"]]:
+        raise Forbidden()
+    phone = sms.normalize_phone(data["phone"])
+    if not data["name"] or not phone:
+        return render_invites(request, conn, user, data, "이름과 휴대폰 번호를 확인하세요.", 400)
+    if conn.execute("SELECT 1 FROM users WHERE phone_e164 = ?", (phone,)).fetchone():
+        return render_invites(request, conn, user, data, "이미 등록된 번호입니다.", 400)
+    with conn:
+        conn.insert(
+            """INSERT INTO users (email, name, phone, phone_e164, password_hash, role, lang, seen_baseline, created_at)
+               VALUES (NULL, ?, ?, ?, '!', ?, NULL, (SELECT COALESCE(MAX(id), 0) FROM audit_log), ?)""",
+            (data["name"], sms.format_phone(phone), phone, data["role"], now()),
+        )
+    if data["notify"] and sms.SMS_ENABLED:
+        login_url = f"{request.url.scheme}://{request.url.netloc}/login"
+        text = translate(detect_lang(request), "{brand}에 등록되었습니다. 이 번호로 로그인하세요: {url}", brand="Kenit", url=login_url)
+        try:
+            sms.sender.send(phone, text)
+        except sms.SmsError as e:
+            print(f"[SMS 발송 실패] {e}")
+            flash(request, "등록했지만 안내 문자를 보내지 못했습니다. 로그인 주소를 직접 알려 주세요.", "error")
+            return redirect("/invites")
+    flash(request, "{name}님을 {role}(으)로 등록했습니다. 이 번호로 문자 코드를 받아 로그인할 수 있습니다.",
+          name=data["name"], role=C.ROLES[data["role"]])
+    return redirect("/invites")
 
 
 @app.post("/users/{user_id}/toggle")
