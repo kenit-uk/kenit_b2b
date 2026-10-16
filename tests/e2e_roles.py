@@ -29,7 +29,7 @@ assert role("mgr@ex.com") == "manager"
 
 # 매니저: 현장 업무
 page = mgr.get("/houses").text
-assert "+ 집 등록" in page and "사용자 관리" in page and "초대하기" in page and "role-manager" in page
+assert "+ 집 등록" in page and "설치업자·사용자" in page and "초대하기" in page and "role-manager" in page
 r = mgr.post("/houses/new", data=dict(address="7 Manager Road", landlord_phone="+447700111222"), follow_redirects=True)
 hid = int(re.search(r"/houses/(\d+)", str(r.url)).group(1))
 assert mgr.post(f"/houses/{hid}/members", data=dict(user_id=uid("inst@ex.com"))).status_code in (200, 303)   # 매니저도 배정 가능

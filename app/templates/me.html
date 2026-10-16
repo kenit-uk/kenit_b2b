@@ -32,6 +32,12 @@
   {% endif %}
 </section>
 
+{% if is_office %}
+<section class="card links-card">
+  <a href="/invites">✉️ {{ _('초대하기') }}</a>
+  <a href="/users">👥 {{ _('설치업자·사용자') }}</a>
+</section>
+{% endif %}
 <section class="card">
   <h2>{{ _('언어') }}</h2>
   <div class="seg">

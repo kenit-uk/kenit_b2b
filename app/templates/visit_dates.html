@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "_survey.html" as s with context %}
+{% block title %}{{ _('언제 방문할 수 있나요?') }}{% endblock %}
+{% set WD = ['월','화','수','목','금','토','일'] %}
+{% block content %}
+{{ s.flow_head('/today', visit.address.split(',')[0] ~ ' · ' ~ (visit.postcode or ''), _('언제 방문할 수 있나요?')) }}
+<p>{{ _('가능한 날짜 2~3일을 누르세요. 회사가 고객과 통화해 하루를 확정합니다.') }}</p>
+
+<form method="post" action="/visits/{{ visit.id }}/dates" id="dates-form">
+<div class="card month">
+  <div class="month-head">
+    <a class="back-btn" href="?month={{ prev_month }}">‹</a>
+    <b>{{ _('{y}년 {m}월', y=first.year, m=first.month) }}</b>
+    <a class="back-btn" href="?month={{ next_month }}">›</a>
+  </div>
+  <div class="month-grid">
+    {% for w in WD %}<span class="wd">{{ _(w) }}</span>{% endfor %}
+    {% for week in weeks %}{% for d in week %}
+      {% set iso = d|string %}
+      {% if d.month != first.month %}<span class="day out"></span>
+      {% elif d < today or d.weekday() >= 5 %}<span class="day off">{{ d.day }}</span>
+      {% else %}
+      <label class="day {% if iso in busy %}busy{% endif %} {% if d == today %}is-today{% endif %}">
+        <input type="checkbox" name="date" value="{{ iso }}" {% if iso in chosen %}checked{% endif %}>
+        <span>{{ d.day }}</span>
+      </label>
+      {% endif %}
+    {% endfor %}{% endfor %}
+  </div>
+  <p class="legend small muted"><span class="sel-dot"></span>{{ _('선택함') }} <span class="busy-dot"></span>{{ _('다른 작업 있음') }}</p>
+</div>
+<div class="card picked">
+  <b class="picked-title" data-tpl="{{ _('{n}일을 선택했습니다') }}">{{ _('{n}일을 선택했습니다', n=chosen|length) }}</b>
+  <div class="picked-list"></div>
+</div>
+<div class="sticky-actions"><button class="btn primary block">{{ _('날짜 보내기') }}</button></div>
+</form>
+{% set WDT = [] %}{% for w in WD %}{% set _x = WDT.append(_(w)) %}{% endfor %}
+<script>
+  (function () {
+    const f = document.getElementById('dates-form'), title = f.querySelector('.picked-title'), list = f.querySelector('.picked-list');
+    const wd = {{ WDT|tojson }};
+    const sync = () => {
+      const boxes = [...f.querySelectorAll('input[name=date]')];
+      const on = boxes.filter(b => b.checked);
+      boxes.forEach(b => { if (!b.checked) b.disabled = on.length >= 3; });   // 최대 3일
+      title.textContent = title.dataset.tpl.replace('{n}', on.length);
+      list.innerHTML = '';
+      on.forEach(b => { const d = new Date(b.value + 'T12:00'); const s = document.createElement('span');
+        s.className = 'chip-day'; s.textContent = d.getDate() + ' (' + wd[(d.getDay() + 6) % 7] + ')'; list.appendChild(s); });
+    };
+    f.addEventListener('change', sync); sync();
+  })();
+</script>
+{% endblock %}

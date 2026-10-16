@@ -104,6 +104,7 @@ templates.env.filters["localdt"] = fmt_local
 templates.env.filters["size"] = fmt_size
 templates.env.filters["fromjson"] = lambda s: json.loads(s) if s else {}
 templates.env.filters["phone"] = sms.format_phone
+templates.env.filters["todate"] = lambda s: datetime.fromisoformat(s).date()
 templates.env.globals.update(
     BRAND=C.BRAND,
     COMPANY=C.COMPANY,
@@ -138,6 +139,11 @@ def render(request: Request, name: str, user=None, status_code: int = 200, **ctx
     if ctx.get("message"):
         ctx["message"] = _(ctx["message"])
     here = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    if user is not None and user["role"] in C.OFFICE_ROLES and "pending_total" not in ctx:
+        from .approvals import pending_count
+        db = getattr(request.state, "db", None)
+        if db is not None:
+            ctx["pending_total"] = pending_count(db)
     if user is not None and "unread_total" not in ctx:
         db = getattr(request.state, "db", None)
         if db is not None:
@@ -391,12 +397,19 @@ def attachments_by_entry(conn, entry_ids: list[int]) -> dict[int, list]:
 # ---------- 인증 ----------
 
 @app.get("/")
-def index():
-    return redirect("/houses")
+def index(request: Request):
+    if not request.session.get("user_id"):
+        return redirect("/login")
+    conn = connect()
+    try:
+        u = conn.execute("SELECT role FROM users WHERE id = ?", (request.session["user_id"],)).fetchone()
+    finally:
+        conn.close()
+    return redirect("/approvals" if u and u["role"] in C.OFFICE_ROLES else "/today")
 
 
 @app.get("/login")
-def login_page(request: Request, next: str = "/houses"):
+def login_page(request: Request, next: str = "/"):
     return render(request, "login.html", next=next)
 
 
@@ -405,7 +418,7 @@ async def login(request: Request, conn=Depends(get_db)):
     form = await request.form()
     email = form_str(form, "email").lower()
     password = form.get("password") or ""
-    next_url = safe_next(form_str(form, "next") or "/houses")
+    next_url = safe_next(form_str(form, "next") or "/")
     user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
     if not user or not verify_password(password, user["password_hash"]):
         return render(request, "login.html", next=next_url, email=email,
@@ -416,7 +429,7 @@ async def login(request: Request, conn=Depends(get_db)):
     return start_session(request, user, next_url)
 
 
-def start_session(request: Request, user, next_url: str = "/houses"):
+def start_session(request: Request, user, next_url: str = "/"):
     lang = user["lang"] or detect_lang(request)
     request.session.clear()
     request.session.update(user_id=user["id"], lang=lang)
@@ -529,7 +542,7 @@ async def me_phone_verify(request: Request, user=Depends(current_user), conn=Dep
 
 
 @app.get("/lang/{code}")
-def set_lang(request: Request, code: str, next: str = "/houses", conn=Depends(get_db)):
+def set_lang(request: Request, code: str, next: str = "/", conn=Depends(get_db)):
     if code in LANGS:
         request.session["lang"] = code
         if request.session.get("user_id"):
@@ -583,7 +596,7 @@ async def signup(request: Request, conn=Depends(get_db)):
     request.session.clear()
     request.session.update(user_id=new_id, lang=lang)
     flash(request, "{role} 계정으로 가입되었습니다.", role=C.ROLES[role])
-    return redirect("/houses")
+    return redirect("/")
 
 
 # ---------- 집(현장) ----------
@@ -755,6 +768,14 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
                       (SELECT COUNT(*) FROM scope_acks a WHERE a.scope_id = s.id) AS ack_count
                FROM scope_versions s WHERE s.house_id = ? ORDER BY s.version DESC""", (user["id"], house_id)).fetchall(),
         **project_doc_summary(conn, house_id, user),
+        visits=conn.execute(
+            """SELECT v.*, u.name AS installer_name FROM visits v LEFT JOIN users u ON u.id = v.installer_id
+               WHERE v.house_id = ? AND v.status != 'cancelled' AND (? = 1 OR v.installer_id = ?)
+               ORDER BY COALESCE(v.date, '9999'), v.start_time""",
+            (house_id, 1 if is_office(user) else 0, user["id"])).fetchall(),
+        variation_counts={r["status"]: r["n"] for r in conn.execute(
+            "SELECT status, COUNT(*) AS n FROM variations WHERE house_id = ? GROUP BY status", (house_id,))},
+        VISIT_KINDS=C.VISIT_KINDS, VISIT_STATUS=C.VISIT_STATUS, VARIATION_STATUS=C.VARIATION_STATUS,
         SURVEY_STATUS=C.SURVEY_STATUS, C_REQUIRED=C.REQUIRED_DOCS,
         can_edit=lambda e: can_edit(user, e),
     )
@@ -1011,8 +1032,13 @@ def file_download(file_id: int, download: int = 0, user=Depends(current_user), c
 
 @app.get("/users")
 def users_page(request: Request, user=Depends(office_user), conn=Depends(get_db)):
+    from .approvals import fgas_state
     users = conn.execute("SELECT * FROM users ORDER BY role DESC, created_at").fetchall()
-    return render(request, "users.html", user=user, users=users, manageable=C.MANAGEABLE[user["role"]])
+    projects = {r["user_id"]: r["n"] for r in conn.execute(
+        """SELECT m.user_id, COUNT(*) AS n FROM house_members m JOIN houses h ON h.id = m.house_id
+           WHERE h.stage < 9 GROUP BY m.user_id""")}
+    return render(request, "users.html", user=user, users=users, manageable=C.MANAGEABLE[user["role"]],
+                  projects=projects, fgas={u["id"]: fgas_state(u["fgas_expiry"]) for u in users})
 
 
 @app.get("/invites")
@@ -1107,6 +1133,8 @@ def invite_regenerate(request: Request, role: str, user=Depends(admin_user), con
 from .survey import router as survey_router  # noqa: E402
 from .scope import router as scope_router  # noqa: E402
 from .documents import router as documents_router  # noqa: E402
+from .visits import router as visits_router  # noqa: E402
+from .approvals import router as approvals_router  # noqa: E402
 
-for _r in (survey_router, scope_router, documents_router):
+for _r in (survey_router, scope_router, documents_router, visits_router, approvals_router):
     app.include_router(_r)

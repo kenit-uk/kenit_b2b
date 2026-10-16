@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% import "_survey.html" as s with context %}
+{% block title %}{{ _('승인 대기') }} · {{ BRAND }}{% endblock %}
+{% block main_class %}container wide{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><p class="muted small">{{ _('{m}월 {d}일', m=today.month, d=today.day) }}</p><h1>{{ _('승인 대기 목록') }}</h1></div>
+  <a class="btn primary hide-mobile" href="/houses/new">{{ _('+ 새 프로젝트') }}</a>
+</div>
+
+<div class="approval-grid">
+  <div class="approval-list">
+    {% for i in items %}
+    <a class="card approval-item {% if selected and i.type == selected.type and i.id == selected.id %}active{% endif %} {% if i.urgent %}urgent{% endif %}"
+       href="{{ i.href if i.href and not i.type in ('report', 'message') else '?item=' ~ i.type ~ '-' ~ i.id }}">
+      <div class="q-head"><b>{{ i.address.split(',')[0] }}</b><span class="muted small">{{ i.at|dt }}</span></div>
+      <span class="muted small">{{ i.who or '' }} · {{ _(i.label) }}</span>
+      {% if i.type == 'report' %}<span class="small {{ 'bad-text' if i.urgent else 'ok-text' }}">{{ _('문제 있음 보고') if i.urgent else _('문제 없음 보고') }}</span>
+      {% elif i.type in ('message', 'variation') %}<span class="small {{ 'bad-text' if i.urgent else '' }}">{{ i.row.body|truncate(60) }}</span>
+      {% elif i.type == 'survey' %}<span class="small link-text">{{ _('현장조사 검토') }} · {{ _('방 {n}개', n=i.detail.rooms) }}</span>
+      {% elif i.type == 'visit' %}<span class="small {{ 'bad-text' if i.urgent else 'link-text' }}">{{ _(C.VISIT_KINDS[i.row.kind]) }}{% if i.row.date %} · {{ i.row.date }}{% endif %}</span>{% endif %}
+    </a>
+    {% else %}
+    <div class="card empty">{{ _('승인 대기가 없습니다.') }}</div>
+    {% endfor %}
+  </div>
+
+  {% if selected and selected.type in ('report', 'message') %}
+  <section class="card approval-detail">
+    <div class="q-head"><h2>{{ selected.address.split(',')[0] }} — {{ _(selected.label) }}</h2><a class="small" href="/houses/{{ selected.house_id }}">{{ _('프로젝트 열기') }}</a></div>
+    <p class="muted small">{{ selected.who }} · {{ selected.at|dt }}</p>
+    {% if selected.type == 'report' %}
+      <p><b>{{ _('오늘 한 작업') }}:</b> {% for w in work %}{{ _(C.WORK_DONE[w]) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+      {% if selected.row.note %}<p class="body">{{ selected.row.note }}</p>{% endif %}
+      {% if report_media %}<h3>{{ _('문제 사진') }}</h3>{{ s.media_grid(report_media) }}{% endif %}
+      <h3>{{ _('오늘 사진') }} ({{ visit_media|length }})</h3>
+      <div class="photo-grid">{% for p in visit_media %}<div class="photo"><a href="/media/{{ p.id }}" target="_blank"><img src="/media/{{ p.id }}" loading="lazy" alt=""></a><span class="photo-tag">{{ p.tag or _('방 지정 안 됨') }}</span></div>{% endfor %}</div>
+      <p class="muted small">{{ _('고객에게 진행 안내 이메일을 보내는 기능은 v3에서 추가됩니다. 지금은 확인만 기록합니다.') }}</p>
+      <form method="post" action="/approvals/report/{{ selected.id }}/review" class="row wrap">
+        <button class="btn primary">{{ _('확인') }}</button>
+        <a class="btn" href="/visits/{{ selected.visit_id }}">{{ _('현장 기록 보기') }}</a>
+      </form>
+    {% else %}
+      <p class="body">{{ selected.row.body }}</p>
+      {{ s.media_grid(item_media or []) }}
+      <form method="post" action="/approvals/message/{{ selected.id }}/review" class="row wrap">
+        <button class="btn primary">{{ _('확인') }}</button>
+        {% if selected.row.scope_id %}<a class="btn" href="/houses/{{ selected.house_id }}/scope">{{ _('작업 범위 열기') }}</a>{% endif %}
+      </form>
+    {% endif %}
+  </section>
+  {% endif %}
+</div>
+
+<section class="card">
+  <h2>{{ _('진행 중 프로젝트') }}</h2>
+  <table class="history stackable">
+    <thead><tr><th>{{ _('프로젝트') }}</th><th>{{ _('관리번호') }}</th><th>{{ _('단계') }}</th><th>{{ _('설치업자') }}</th><th>{{ _('다음 일정') }}</th></tr></thead>
+    <tbody>
+    {% for h in projects %}
+      <tr>
+        <td class="cell-title" data-label="{{ _('프로젝트') }}"><a href="/houses/{{ h.id }}">{{ h.address.split(',')[0] }}</a></td>
+        <td data-label="{{ _('관리번호') }}"><span class="ref-no">{{ h.ref_no }}</span></td>
+        <td data-label="{{ _('단계') }}">{{ h.stage }} · {{ _(STAGES[h.stage]) }}</td>
+        <td data-label="{{ _('설치업자') }}">{{ names[h.id]|join(', ') or '—' }}</td>
+        <td data-label="{{ _('다음 일정') }}">{% set n = nxt[h.id] %}{% if n %}{{ n.date }} · {{ _(C.VISIT_KINDS[n.kind]) }}{% if n.status == 'proposed' %} <span class="tag warn">{{ _('가능한가요?') }}</span>{% endif %}{% else %}—{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="5" class="muted">{{ _('진행 중인 프로젝트가 없습니다.') }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

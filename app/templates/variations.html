@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% import "_survey.html" as s with context %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ _('변경 요청') }} · {{ house.address }}{% endblock %}
+{% block content %}
+{{ s.flow_head(('/visits/' ~ visit_id) if visit_id else '/houses/' ~ house.id, house.address.split(',')[0], _('작업 변경')) }}
+
+{% if not is_office %}
+<form method="post" action="/houses/{{ house.id }}/variations" enctype="multipart/form-data" class="card stack var-form" {{ m.upload_attrs(house.id) }}>
+  <h3>{{ _('변경 요청하기') }}</h3>
+  {% if visit_id %}<input type="hidden" name="visit_id" value="{{ visit_id }}">{% endif %}
+  {{ s.choices('kind', C.VARIATION_KINDS, 'move_idu', 'grid2') }}
+  {{ s.photo_input('+ 사진') }}
+  <textarea name="body" rows="3" required placeholder="{{ _('예: 여기 벽이 비어 있어요. 왼쪽으로 1미터 옮겨서 벽돌 벽에 다는 게 좋겠어요.') }}"></textarea>
+  <p class="muted small">🎤 {{ _('휴대폰 키보드의 마이크 버튼을 누르면 말로 입력할 수 있습니다.') }}</p>
+  <button class="btn primary block">{{ _('회사로 보내기') }}</button>
+</form>
+{% endif %}
+
+<h2 class="section-title">{{ _('이 프로젝트의 변경 요청') }}</h2>
+{% for x in variations %}
+<article class="card var-card st-{{ x.status }}" id="vo-{{ x.number }}">
+  <div class="q-head"><h3>VO-{{ x.number }} · {{ _(C.VARIATION_KINDS[x.kind]) }}</h3><span class="var-badge st-{{ x.status }}">{{ _(C.VARIATION_STATUS[x.status]) }}</span></div>
+  <p class="body">{{ x.body }}</p>
+  {{ s.media_grid(photos.get(x.id, [])) }}
+  <p class="muted small">
+    {% if x.status == 'pending' %}{{ _('고객 승인 대기 중. {when} 전송.', when=x.created_at|dt) }}
+    {% else %}{{ _('{when} {who} 결정.', when=x.decided_at|dt, who=x.decider_name) }}{% if x.status == 'approved' %} {{ _('이제 작업 범위에 포함.') }}{% endif %}{% endif %}
+    {% if x.decision_note %} — {{ x.decision_note }}{% endif %}
+  </p>
+  {% if is_office %}
+  <form method="post" action="/variations/{{ x.id }}/decide" class="row wrap">
+    <input name="note" placeholder="{{ _('메모 (선택)') }}" maxlength="500">
+    {% if x.status != 'approved' %}<button class="btn small primary" name="status" value="approved">{{ _('고객 승인 → 시공 가능') }}</button>{% endif %}
+    {% if x.status != 'rejected' %}<button class="btn small" name="status" value="rejected">{{ _('원래대로 진행') }}</button>{% endif %}
+    {% if x.status != 'pending' %}<button class="btn small" name="status" value="pending">{{ _('다시 승인 대기로') }}</button>{% endif %}
+  </form>
+  <p class="muted small">{{ _('금액은 견적 기록(회사 전용)에 남기세요. 설치업자에게는 보이지 않습니다.') }}</p>
+  {% endif %}
+</article>
+{% else %}
+<div class="card empty">{{ _('변경 요청이 없습니다.') }}</div>
+{% endfor %}
+<script src="/static/upload.js"></script>
+{% endblock %}

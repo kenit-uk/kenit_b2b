@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% import "_survey.html" as s with context %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ visit.address }} · {{ _(C.VISIT_KINDS[visit.kind]) }}{% endblock %}
+{% block content %}
+{% set mine = visit.installer_id == user.id %}
+<header class="site-head">
+  <div class="site-top">
+    <a class="back-btn dark" href="{{ '/today' if not is_office else '/houses/' ~ visit.house_id }}">‹</a>
+    <div><h1>{{ visit.address.split(',')[0] }}</h1><span>{{ _(C.VISIT_KINDS[visit.kind]) }}{% if visit.date %} · {{ visit.date }}{% endif %}{% if is_office %} · {{ visit.installer_name }}{% endif %}</span></div>
+    <a class="docs-btn" href="/houses/{{ visit.house_id }}/docs">📄 {{ _('자료') }}{% if new_docs %}<b>{{ new_docs }}</b>{% endif %}</a>
+  </div>
+  {% if arrived %}
+  <div class="site-arrived">🕗 {{ _('현장 도착') }} <b>{{ arrived.at|dt }}</b>{% if arrived.lat is not none %} · {{ _('위치 1회 저장됨') }}{% else %} · {{ _('위치 없음') }}{% endif %}
+    {% if finished %}<br>✓ {{ _('오늘 작업 끝') }} <b>{{ finished.at|dt }}</b>{% endif %}</div>
+  {% endif %}
+</header>
+
+{% if mine and not arrived and visit.status == 'confirmed' %}
+<form method="post" action="/visits/{{ visit.id }}/arrive" class="arrive-form">
+  <input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="accuracy">
+  <button class="btn primary block big">📍 {{ _('현장 도착') }}</button>
+  <p class="muted small center">{{ _('위치는 이 버튼을 누를 때 한 번만 저장됩니다.') }}</p>
+</form>
+{% endif %}
+
+{% if mine and visit.status != 'done' %}
+<form method="post" action="/visits/{{ visit.id }}/photos" enctype="multipart/form-data" class="shoot-form" {{ m.upload_attrs(visit.house_id) }}>
+  <label class="shoot-btn">
+    📷 {{ _('사진 찍기') }}
+    <input type="file" name="files" accept="image/*" capture="environment" multiple
+           data-compressing="{{ _('사진 압축 중…') }}" data-uploading="{{ _('업로드 중 {i}/{n}') }}"
+           data-saving="{{ _('저장 중…') }}" data-failed="{{ _('업로드에 실패했습니다. 인터넷 연결을 확인하고 다시 시도하세요.') }}">
+  </label>
+  <input type="hidden" name="uploaded" value="">
+  <div class="card tag-card">
+    <b>{{ _('찍을 사진 — 어느 방?') }}</b>
+    <div class="choices">
+      {% for t in tags %}<label class="choice"><input type="radio" name="tag" value="{{ t }}" {% if loop.first %}checked{% endif %}><span>{{ t }}</span></label>{% endfor %}
+    </div>
+  </div>
+  <button class="btn primary photo-send hidden">{{ _('사진 올리기') }}</button>
+</form>
+
+<div class="site-actions">
+  <a class="act problem" href="#problem" onclick="document.getElementById('problem').classList.remove('hidden')">⚠<span>{{ _('문제') }}</span></a>
+  <a class="act change" href="/houses/{{ visit.house_id }}/variations?visit={{ visit.id }}">✎<span>{{ _('변경 필요') }}</span></a>
+  <a class="act" href="#message" onclick="document.getElementById('message').classList.remove('hidden')">💬<span>{{ _('회사') }}</span></a>
+</div>
+{% for kind, label, ph in (('problem', '문제 보고', '예: 벽 속에 장애물이 있어요'), ('message', '회사에 메시지', '회사에 전할 말')) %}
+<form method="post" action="/houses/{{ visit.house_id }}/messages" enctype="multipart/form-data" class="card stack hidden" id="{{ kind }}" {{ m.upload_attrs(visit.house_id) }}>
+  <h3>{{ _(label) }}</h3>
+  <input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="visit_id" value="{{ visit.id }}">
+  <textarea name="body" rows="3" required placeholder="{{ _(ph) }}"></textarea>
+  {{ s.photo_input('+ 사진') }}
+  <button class="btn primary">{{ _('회사로 보내기') }}</button>
+</form>
+{% endfor %}
+{% endif %}
+
+<div class="q-head" id="photos"><h2>{{ _('오늘 사진') }}</h2><span class="muted small">{{ _('{n}장', n=photos|length) }}</span></div>
+{% if photos %}
+<form method="post" action="/visits/{{ visit.id }}/photos" class="photo-tags">
+  <div class="photo-grid">
+    {% for p in photos %}
+    <div class="photo">
+      <a href="/media/{{ p.id }}" target="_blank"><img src="/media/{{ p.id }}" alt="" loading="lazy"></a>
+      {% if mine and visit.status != 'done' %}
+      <select name="tag_{{ p.id }}" class="photo-tag-select" onchange="this.form.submit()">
+        <option value="">{{ _('방 지정 안 됨') }}</option>
+        {% for t in tags %}<option {% if p.tag == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select>
+      {% else %}<span class="photo-tag">{{ p.tag or _('방 지정 안 됨') }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</form>
+{% else %}<p class="muted small">{{ _('아직 사진이 없습니다.') }}</p>{% endif %}
+
+{% if variations %}
+<h2 class="section-title">{{ _('이 프로젝트의 변경 요청') }}</h2>
+{% for x in variations[:3] %}<a class="card var-row st-{{ x.status }}" href="/houses/{{ visit.house_id }}/variations"><b>VO-{{ x.number }} · {{ _(C.VARIATION_KINDS[x.kind]) }}</b><span class="var-badge st-{{ x.status }}">{{ _(C.VARIATION_STATUS[x.status]) }}</span></a>{% endfor %}
+{% endif %}
+
+{% if mine and arrived and visit.status != 'done' %}
+<div class="sticky-actions"><a class="btn dark block big" href="/visits/{{ visit.id }}/finish">✓ {{ _('오늘 작업 끝') }}</a></div>
+{% endif %}
+<script src="/static/upload.js"></script>
+<script src="/static/site.js"></script>
+<script>
+  // 사진을 고르면 바로 올린다 (선택한 방 태그와 함께)
+  document.querySelectorAll('.shoot-form input[type=file]').forEach(i => i.addEventListener('change', () => {
+    if (i.files.length) i.form.requestSubmit(i.form.querySelector('.photo-send'));
+  }));
+</script>
+{% endblock %}

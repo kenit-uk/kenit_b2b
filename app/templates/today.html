@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ _('오늘 할 일') }} · {{ BRAND }}{% endblock %}
+{% set WD = ['월','화','수','목','금','토','일'] %}
+{% block content %}
+<div class="today-head">
+  <div>
+    <p class="muted small">{{ _('{m}월 {d}일 ({w})', m=today.month, d=today.day, w=_(WD[today.weekday()])) }}</p>
+    <h1>{{ _('안녕하세요, {name}', name=user.name) }}</h1>
+  </div>
+</div>
+
+<h2 class="section-title">{{ _('오늘') }}</h2>
+{% for v in todays %}
+<article class="card task-card {% if v.status != 'done' %}main{% endif %}">
+  <div class="task-top"><span class="tag warn">{% if v.start_time %}{{ v.start_time }} · {% endif %}{{ _('할 일') if v.status != 'done' else _('작업 끝') }}</span><span class="muted small">{{ _(C.VISIT_KINDS[v.kind]) }}</span></div>
+  <h3>{{ v.address.split(',')[0] }}</h3>
+  <p class="muted small">{{ v.postcode or '' }}{% if rooms[v.id] %} · {{ _('실내기 {n}대', n=rooms[v.id]) }}{% endif %}</p>
+  <a class="small" href="/houses/{{ v.house_id }}/docs">{{ _('도면·사양서·LATS — 열기') }}</a>
+  {% if v.status == 'done' %}
+    <a class="btn block" href="/visits/{{ v.id }}">{{ _('보고 내용 보기') }}</a>
+  {% elif v.arrived_at %}
+    <a class="btn primary block" href="/visits/{{ v.id }}">{{ _('현장 화면 열기') }}</a>
+  {% else %}
+    <form method="post" action="/visits/{{ v.id }}/arrive" class="arrive-form">
+      <input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="accuracy">
+      <button class="btn primary block">📍 {{ _('현장 도착') }}</button>
+    </form>
+  {% endif %}
+</article>
+{% endfor %}
+
+{% for s in surveys %}
+<article class="card task-card">
+  <div class="task-top"><span class="tag warn">{{ _('할 일') }}</span><span class="muted small">{{ _('현장조사') }}</span></div>
+  <h3>{{ s.address.split(',')[0] }}</h3>
+  <p class="muted small">{{ s.postcode or '' }} · {{ _('방 {n}개 중 {i}개 완료', n=s.rooms, i=s.done_rooms) }}{% if s.requests %} · 📷 {{ _('추가 사진 요청 {n}', n=s.requests) }}{% endif %}</p>
+  <a class="btn soft block" href="/houses/{{ s.house_id }}/survey">{{ _('현장조사 계속하기') }}</a>
+</article>
+{% endfor %}
+
+{% for v in date_requests %}
+<article class="card task-card">
+  <div class="task-top"><span class="tag warn">{{ _('할 일') }}</span><span class="muted small">{{ _('날짜 선택 필요') }}</span></div>
+  <h3>{{ v.address.split(',')[0] }}</h3>
+  <p class="muted small">{{ v.postcode or '' }} · {{ _(C.VISIT_KINDS[v.kind]) }} {{ _('방문') }}</p>
+  <a class="btn soft block" href="/visits/{{ v.id }}/dates">{{ _('가능한 날짜 2~3개 고르기') }}</a>
+</article>
+{% endfor %}
+
+{% for sc in scopes %}
+<a class="card task-card row-card" href="/houses/{{ sc.house_id }}/scope/{{ sc.version }}">
+  <div><div class="task-top"><span class="tag new">NEW · v{{ sc.version }}</span><span class="muted small">{{ _('작업 범위 변경') }}</span></div>
+  <h3>{{ sc.address.split(',')[0] }}</h3></div>
+  <span class="btn soft">{{ _('보기') }}</span>
+</a>
+{% endfor %}
+{% if docs %}
+<a class="card task-card row-card" href="/houses/{{ docs[0].house_id }}/docs">
+  <div><div class="task-top"><span class="tag new">NEW</span><span class="muted small">{{ _('새 자료 {n}개', n=docs|length) }}</span></div>
+  <h3>{{ docs[0].address.split(',')[0] }}{% if docs|length > 1 %} {{ _('외') }}{% endif %}</h3></div>
+  <span class="btn soft">{{ _('보기') }}</span>
+</a>
+{% endif %}
+
+{% if not (todays or surveys or date_requests or scopes or docs) %}
+<div class="card empty">{{ _('오늘 할 일이 없습니다.') }}</div>
+{% endif %}
+
+{% if proposals or upcoming %}
+<h2 class="section-title">{{ _('다가오는 일정') }}</h2>
+<div class="card upcoming">
+  {% for v in proposals %}
+  <div class="up-row">
+    <div><b>{{ _('{m}월 {d}일 ({w})', m=v.date[5:7]|int, d=v.date[8:]|int, w=_(WD[(v.date|todate).weekday()])) if v.date else '' }}</b>
+      <span class="muted small">{{ v.address.split(',')[0] }} · {{ _(C.VISIT_KINDS[v.kind]) }}{% if v.start_time %} · {{ v.start_time }}{% endif %}</span></div>
+    <form method="post" action="/visits/{{ v.id }}/reply" class="row">
+      <button class="btn small primary" name="answer" value="yes">{{ _('예') }}</button>
+      <button class="btn small" name="answer" value="no">{{ _('아니요') }}</button>
+    </form>
+  </div>
+  {% endfor %}
+  {% for v in upcoming if v.status == 'confirmed' %}
+  <div class="up-row">
+    <div><b>{{ _('{m}월 {d}일 ({w})', m=v.date[5:7]|int, d=v.date[8:]|int, w=_(WD[(v.date|todate).weekday()])) }}</b>
+      <span class="muted small">{{ v.address.split(',')[0] }} · {{ _(C.VISIT_KINDS[v.kind]) }}{% if v.start_time %} · {{ v.start_time }}{% endif %}</span></div>
+    <span class="tag ok">{{ _('확정') }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+<script src="/static/site.js"></script>
+{% endblock %}

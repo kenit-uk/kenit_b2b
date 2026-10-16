@@ -139,7 +139,7 @@ data-upload data-direct="{{ 1 if DIRECT_UPLOAD else 0 }}" data-upload-url="/hous
 {%- endmacro %}
 
 {% macro history_table(rows, entry_type=None, new_ids=()) %}
-  <table class="history stack">
+  <table class="history stackable">
     <thead><tr><th>{{ _('일시') }}</th><th>{{ _('작업') }}</th><th>{{ _('내용') }}</th><th>{{ _('작업자') }}</th></tr></thead>
     <tbody>
     {% for h in rows %}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "_survey.html" as s with context %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ _('오늘 작업 끝') }} · {{ visit.address }}{% endblock %}
+{% block content %}
+{% set f = form or {} %}
+{{ s.flow_head('/visits/' ~ visit.id, visit.address.split(',')[0] ~ (' · ' ~ (arrived.at|dt)[-5:] ~ ' –' if arrived else ''), _('오늘 작업 끝')) }}
+{% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+<form method="post" action="/visits/{{ visit.id }}/finish" enctype="multipart/form-data" class="survey-form finish-form" {{ m.upload_attrs(visit.house_id) }}>
+  <input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="accuracy">
+  <h3>1. {{ _('오늘 한 작업은?') }}</h3>
+  {{ s.checks('work', C.WORK_DONE, f.work or [], 'grid2') }}
+  <p class="muted small">{{ _('해당하는 것을 모두 누르세요.') }}</p>
+
+  <h3>2. {{ _('문제가 있었나요?') }}</h3>
+  <div class="choices grid2 problem-choice">
+    <label class="choice ok"><input type="radio" name="problem" value="no" {% if f.problem != 'yes' %}checked{% endif %}><span>{{ _('문제 없음') }}</span></label>
+    <label class="choice bad"><input type="radio" name="problem" value="yes" {% if f.problem == 'yes' %}checked{% endif %}><span>{{ _('네, 문제 있음') }}</span></label>
+  </div>
+  <div class="problem-box">
+    <p class="muted small">{{ _('"네, 문제 있음"이면 사진과 메모(말하기 또는 글)가 꼭 필요합니다.') }}</p>
+    {{ s.photo_input('+ 사진') }}
+  </div>
+  <textarea name="note" rows="3" placeholder="{{ _('메모 (선택) — 문제가 있으면 꼭 적어 주세요') }}">{{ f.note or '' }}</textarea>
+
+  <div class="card leave-check">
+    <h3>3. {{ _('떠나기 전 확인') }}</h3>
+    {% set untagged = photos|rejectattr('tag')|list|length %}
+    <div class="q-row"><span>{{ _('오늘 사진') }}</span>
+      <b class="{{ 'ok-text' if photos and not untagged else 'warn-text' }}">{{ _('{n}장', n=photos|length) }}{% if photos and not untagged %} · {{ _('모든 방 지정 완료') }}{% elif untagged %} · {{ _('방 미지정 {n}장', n=untagged) }}{% endif %}</b></div>
+    {% if untagged %}<a class="small" href="/visits/{{ visit.id }}#photos">{{ _('사진에 방 지정하기') }}</a>{% endif %}
+  </div>
+
+  <div class="sticky-actions">
+    <button class="btn dark block big">✓ {{ _('보내고 작업 끝') }}</button>
+    <p class="muted small center">{{ _('회사가 보고를 확인한 뒤에 고객에게 전달됩니다.') }}</p>
+  </div>
+</form>
+<script src="/static/upload.js"></script>
+<script src="/static/site.js"></script>
+<script>
+  (function () {
+    const f = document.querySelector('.finish-form'), box = f.querySelector('.problem-box');
+    const sync = () => box.classList.toggle('hidden', f.querySelector('input[name=problem]:checked').value !== 'yes');
+    f.addEventListener('change', sync); sync();
+  })();
+</script>
+{% endblock %}

@@ -92,6 +92,34 @@
 </section>
 </div>
 
+<div class="work-cards two">
+<section class="card work-card" id="visits">
+  <div class="q-head"><h2>{{ _('일정') }}</h2>{% if is_office %}<a class="btn small" href="/calendar?house={{ house.id }}#book">{{ _('+ 방문 예약') }}</a>{% endif %}</div>
+  {% for v in visits %}
+  <div class="visit-row st-{{ v.status }}">
+    <div><b>{{ _(VISIT_KINDS[v.kind]) }}</b>
+      <span class="muted small">{{ v.date or _('날짜 미정') }}{% if v.start_time %} · {{ v.start_time }}{% if v.end_time %}–{{ v.end_time }}{% endif %}{% endif %}{% if is_office %} · {{ v.installer_name }}{% endif %}</span></div>
+    <span class="row">
+      <span class="tag {{ 'ok' if v.status in ('confirmed', 'done') else 'bad' if v.status == 'declined' else 'warn' }}">{{ _(VISIT_STATUS[v.status]) }}</span>
+      {% if not is_office and v.status == 'requested' %}<a class="btn small primary" href="/visits/{{ v.id }}/dates">{{ _('날짜 고르기') }}</a>
+      {% elif v.status in ('confirmed', 'done') %}<a class="btn small" href="/visits/{{ v.id }}">{{ _('현장 기록') }}</a>{% endif %}
+      {% if is_office and v.status not in ('done', 'cancelled') %}
+      <form method="post" action="/visits/{{ v.id }}/cancel" data-confirm="{{ _('이 방문을 취소할까요?') }}" onsubmit="return confirm(this.dataset.confirm)"><button class="btn small">{{ _('취소') }}</button></form>
+      {% endif %}
+    </span>
+  </div>
+  {% else %}<p class="muted small">{{ _('예약된 방문이 없습니다.') }}</p>{% endfor %}
+</section>
+<section class="card work-card" id="variations">
+  <h2>{{ _('변경 요청') }}</h2>
+  <p class="small">
+    {% for st in ('pending', 'approved', 'rejected') %}{% if variation_counts.get(st) %}<span class="var-badge st-{{ st }}">{{ _(VARIATION_STATUS[st]) }} {{ variation_counts[st] }}</span> {% endif %}{% endfor %}
+    {% if not variation_counts %}<span class="muted">{{ _('변경 요청이 없습니다.') }}</span>{% endif %}
+  </p>
+  <a class="btn" href="/houses/{{ house.id }}/variations">{{ _('변경 요청 보기') }}{% if not is_office %} · {{ _('요청하기') }}{% endif %}</a>
+</section>
+</div>
+
 <section class="card" id="members">
   <h2>{{ _('배정된 설치업자') }}</h2>
   {% if members %}

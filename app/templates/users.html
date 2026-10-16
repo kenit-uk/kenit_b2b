@@ -8,7 +8,7 @@
 <section class="card">
   <h2>{{ _('가입자 ({n})', n=users|length) }}</h2>
   <p class="muted small">{{ _('관리자: 모든 권한 · 매니저: 집 등록·상태 변경·견적·집주인 대화, 매니저·설치업자 초대·비활성화 (역할 변경과 다른 사람의 견적·대화 수정 불가) · 설치업자: 현장정보 작성, 견적 열람') }}</p>
-  <table class="history stack users-table">
+  <table class="history stackable users-table">
     <thead><tr><th>{{ _('이름') }}</th><th>{{ _('역할') }}</th><th>{{ _('이메일') }}</th><th>{{ _('연락처') }}</th><th>{{ _('가입일') }}</th><th>{{ _('상태') }}</th><th></th></tr></thead>
     <tbody>
     {% for u in users %}
@@ -41,5 +41,37 @@
     {% endfor %}
     </tbody>
   </table>
+</section>
+<section class="card" id="installers">
+  <h2>{{ _('설치업자 F-Gas') }}</h2>
+  <p class="muted small">{{ _('F-Gas = 냉매 취급 자격. 만료일이 지난 설치업자를 시공에 배정하면 경고가 뜹니다.') }}</p>
+  {% for u in users if u.role == 'installer' and fgas[u.id] in ('expired', 'soon') %}
+    <div class="flash flash-warn"><b>{{ u.name }}</b> {{ _('F-Gas 만료') if fgas[u.id] == 'expired' else _('F-Gas 재확인 기한') }} {{ u.fgas_expiry }}. {{ _('이후에는 냉매 작업 배정 시 경고가 뜹니다.') }}</div>
+  {% endfor %}
+  <table class="history stackable">
+    <thead><tr><th>{{ _('설치업자') }}</th><th>{{ _('F-Gas (개인)') }}</th><th>{{ _('만료 / 재확인') }}</th><th>{{ _('업체 인증') }}</th><th>{{ _('진행 작업') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users if u.role == 'installer' %}
+      <tr class="{% if not u.active %}inactive{% endif %}">
+        <td class="cell-title" data-label="{{ _('설치업자') }}">{{ u.name }}<br><span class="muted small">{{ (u.phone_e164|phone) or u.phone or '' }}</span></td>
+        <td data-label="{{ _('F-Gas (개인)') }}">{{ u.fgas_no or '—' }}</td>
+        <td data-label="{{ _('만료 / 재확인') }}">{% if u.fgas_expiry %}<span class="tag {{ 'bad' if fgas[u.id] == 'expired' else 'warn' if fgas[u.id] == 'soon' else 'ok' }}">{{ u.fgas_expiry }}</span>{% else %}—{% endif %}</td>
+        <td data-label="{{ _('업체 인증') }}">{{ u.fgas_company or '—' }}</td>
+        <td data-label="{{ _('진행 작업') }}">{{ projects.get(u.id, 0) }}</td>
+        <td class="cell-actions">
+          <details class="fgas-edit"><summary class="btn small">{{ _('수정') }}</summary>
+            <form method="post" action="/users/{{ u.id }}/fgas" class="stack">
+              <label>{{ _('F-Gas (개인)') }}<input name="fgas_no" value="{{ u.fgas_no or '' }}" placeholder="{{ _('자격증 번호') }}"></label>
+              <label>{{ _('만료 / 재확인') }}<input type="date" name="fgas_expiry" value="{{ u.fgas_expiry or '' }}"></label>
+              <label>{{ _('업체 인증') }}<input name="fgas_company" value="{{ u.fgas_company or '' }}" placeholder="{{ _('예: REFCOM 인증 · 갱신일') }}"></label>
+              <button class="btn small primary">{{ _('저장') }}</button>
+            </form>
+          </details>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted small">{{ _('비활성화하면 모든 프로젝트 접근이 즉시 끊깁니다. 올린 자료는 프로젝트 기록에 남습니다.') }}</p>
 </section>
 {% endblock %}
