@@ -4,7 +4,7 @@
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
 TMP=$(mktemp -d)
-TESTS="e2e e2e_unread e2e_roles e2e_sms e2e_survey migrate_check concurrent_init"
+TESTS="e2e e2e_unread e2e_roles e2e_sms e2e_survey e2e_scope_docs migrate_check concurrent_init"
 fail=0
 
 run() {  # run <db 이름> <테스트> [환경변수...]

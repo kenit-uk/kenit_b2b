@@ -66,12 +66,29 @@
   {% endif %}
 </section>
 <section class="card work-card" id="scope">
-  <h2>{{ _('작업 범위') }}</h2>
+  <div class="q-head"><h2>{{ _('작업 범위') }}</h2>{% if scopes and scopes[0].locked_at %}<span class="tag ok">🔒 {{ _('확정') }}</span>{% endif %}</div>
   {% if scopes %}
-    <ul class="version-list">{% for sc in scopes %}<li><a href="/houses/{{ house.id }}/scope/{{ sc.version }}">v{{ sc.version }}</a> <span class="muted small">{{ sc.created_at|dt }}</span>{% if loop.first %} <span class="tag ok">{{ _('최신') }}</span>{% endif %}</li>{% endfor %}</ul>
+    {% set latest = scopes[0] %}
+    {% if not is_office and not latest.my_ack %}
+      <p class="request-note"><span class="tag new">NEW · v{{ latest.version }}</span> {{ _('작업 범위가 바뀌었습니다. 확인해 주세요.') }}</p>
+      <a class="btn primary" href="/houses/{{ house.id }}/scope/{{ latest.version }}">{{ _('변경 보기') }}</a>
+    {% endif %}
+    <ul class="version-list">{% for sc in scopes %}<li><a href="/houses/{{ house.id }}/scope/{{ sc.version }}">v{{ sc.version }}</a>
+      <span class="muted small">{{ sc.created_at|dt }}</span>
+      {% if loop.first %}<span class="tag ok">{{ _('최신') }}</span>{% else %}<span class="tag">{{ _('대체됨') }}</span>{% endif %}
+      {% if is_office and loop.first %}<span class="muted small">{{ _('설치업자 확인 {n}명', n=sc.ack_count) }}</span>{% endif %}
+    </li>{% endfor %}</ul>
+    {% if is_office and not latest.locked_at %}<a class="btn small" href="/houses/{{ house.id }}/scope-edit">{{ _('새 버전 만들기') }}</a>{% endif %}
   {% else %}
     <p class="muted small">{{ _('현장조사를 검토한 뒤 회사가 만듭니다.') }}</p>
   {% endif %}
+</section>
+<section class="card work-card" id="docs">
+  <div class="q-head"><h2>{{ _('자료') }}</h2>{% if docs_unacked %}<span class="tag new">NEW {{ docs_unacked }}</span>{% endif %}</div>
+  {% set ready = doc_required.values()|select|list|length == doc_required|length %}
+  <p class="small {{ 'ok-text' if ready else 'muted' }}">{% for k, ok in doc_required.items() %}{{ '✓' if ok else '○' }} {{ _(C_REQUIRED[k]) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  <p class="muted small">{{ _('자료 {n}개', n=docs|length) }}</p>
+  <a class="btn {% if docs_unacked %}primary{% endif %}" href="/houses/{{ house.id }}/docs">{{ _('자료함 열기') }}</a>
 </section>
 </div>
 

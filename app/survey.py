@@ -471,6 +471,8 @@ def scope_from_survey(request: Request, house_id: int, user=Depends(office_user)
     """현장조사 값을 그대로 복사해 작업 범위 새 버전을 만든다. 최종 모델·용량은 회사가 LATS로 정한 뒤 고친다."""
     house = get_house_or_404(conn, house_id, user)
     survey = survey_or_404(conn, house_id)
+    if conn.execute("SELECT 1 FROM scope_versions WHERE house_id = ? AND locked_at IS NOT NULL", (house_id,)).fetchone():
+        raise HTTPException(400, "확정된 작업 범위는 변경 요청(VO)으로만 바꿀 수 있습니다.")
     ctx = survey_context(conn, house, survey)
     data = {
         "rooms": [{"name": r["name"], "indoor_type": r["indoor_type"], "kw": r["kw"], "memo": r["memo"] or "",
@@ -492,18 +494,6 @@ def scope_from_survey(request: Request, house_id: int, user=Depends(office_user)
             audit(conn, house_id=house_id, actor_id=user["id"], action="stage", detail=f"{house['stage']} → 3")
     flash(request, "작업 범위 v{n}을 만들었습니다.", n=last + 1)
     return redirect(f"/houses/{house_id}/scope/{last + 1}")
-
-
-@router.get("/houses/{house_id}/scope/{version}")
-def scope_page(request: Request, house_id: int, version: int, user=Depends(current_user), conn=Depends(get_db)):
-    house = get_house_or_404(conn, house_id, user)
-    row = conn.execute("""SELECT s.*, u.name AS creator_name FROM scope_versions s JOIN users u ON u.id = s.created_by
-                          WHERE s.house_id = ? AND s.version = ?""", (house_id, version)).fetchone()
-    if not row:
-        raise HTTPException(404)
-    versions = conn.execute("SELECT version, created_at FROM scope_versions WHERE house_id = ? ORDER BY version",
-                            (house_id,)).fetchall()
-    return render(request, "scope.html", user=user, house=house, scope=row, data=loads(row["data"]), versions=versions, C=C)
 
 
 # ---------- 사진 보기 ----------

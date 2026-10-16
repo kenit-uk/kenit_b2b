@@ -55,6 +55,23 @@ AUDIT_ACTIONS = {
     "survey_photo_request": "추가 사진 요청",
     "survey_reviewed": "현장조사 검토 완료",
     "scope_create": "작업 범위 버전 생성",
+    "scope_ack": "작업 범위 확인",
+    "scope_comment": "작업 범위 의견",
+    "scope_lock": "작업 범위 확정",
+    "doc_upload": "자료 올림",
+    "doc_ack": "자료 확인",
+    "doc_remove": "자료 내림",
+    "visit_create": "방문 예약",
+    "visit_update": "방문 변경",
+    "visit_dates": "방문 날짜 후보 보냄",
+    "visit_reply": "방문 가능 여부 답변",
+    "arrive": "현장 도착",
+    "finish": "오늘 작업 끝",
+    "variation_create": "변경 요청",
+    "variation_decide": "변경 요청 결정",
+    "problem": "문제 보고",
+    "message": "회사에 메시지",
+    "review": "승인 대기 확인",
     "entry_create": "기록 작성",
     "entry_edit": "기록 수정",
     "attachment_add": "첨부 추가",
@@ -94,3 +111,19 @@ TRUNKING = {"incl": "포함", "excl": "미포함"}
 TRUNKING_COLOURS = {"white": "화이트", "black": "블랙", "other": "기타"}
 ACCESS = {"ladder": "사다리", "scaffold": "비계", "none": "필요 없음"}
 SURVEY_STATUS = {"draft": "작성 중", "submitted": "회사 검토 대기", "reviewed": "검토 완료"}
+
+# ---------- 자료함 (시안 p.18~19) ----------
+DOC_CATEGORIES = {"drawing": "도면", "floorplan": "평면도", "lats": "LATS 보고서", "catalogue": "제품 카탈로그·사양서", "agreement": "협의 기록"}
+# 1차 시공 일정을 확정하기 전에 꼭 있어야 하는 자료 (시공 시작 관문)
+REQUIRED_DOCS = {"drawing": "건물 도면", "catalogue": "제품 카탈로그·사양서", "lats": "LATS (최종)"}
+# 가격 문서는 자료함에 올리지 않는다 (제목에 이런 말이 있으면 막는다)
+PRICE_WORDS = ("quote", "quotation", "invoice", "price", "견적", "인보이스", "청구", "가격", "금액")
+
+# ---------- 방문·현장 (시안 p.4, 5, 11, 14, 15, 28) ----------
+VISIT_KINDS = {"survey": "현장조사", "first_fix": "1차 시공", "second_fix": "2차 시공", "other": "기타 방문"}
+VISIT_STATUS = {"requested": "날짜 선택 필요", "options": "날짜 후보 받음", "proposed": "가능한가요?", "confirmed": "확정",
+                "declined": "불가 답변", "done": "작업 끝", "cancelled": "취소됨"}
+WORK_DONE = {"pipework": "배관", "indoor": "실내기", "outdoor": "실외기", "electrics": "전기", "commissioning": "시운전"}
+VARIATION_KINDS = {"move_idu": "실내기 위치 이동", "add_idu": "실내기 추가", "add_pipe": "배관 추가", "other": "기타"}
+VARIATION_STATUS = {"pending": "시공 금지", "approved": "시공 가능", "rejected": "원래대로 진행"}
+MESSAGE_KINDS = {"problem": "문제 보고", "message": "회사에 메시지", "scope_comment": "작업 범위 의견"}

@@ -1,20 +1,91 @@
 {% extends "base.html" %}
 {% import "_scope_values.html" as v with context %}
+{% import "_survey.html" as s with context %}
 {% block title %}{{ _('작업 범위') }} v{{ scope.version }} · {{ house.address }}{% endblock %}
 {% block content %}
-<a class="back" href="/houses/{{ house.id }}">← {{ house.ref_no }} · {{ house.address }}</a>
-<div class="page-head">
-  <div>
-    <h1>{{ _('작업 범위') }} v{{ scope.version }}</h1>
-    <p class="muted small">{{ scope.created_at|dt }} · {{ scope.creator_name }}{% if scope.note %} · {{ _(scope.note) }}{% endif %}</p>
-  </div>
+{{ s.flow_head('/houses/' ~ house.id, house.address, _('작업 범위') ~ (': v' ~ base.version ~ ' → v' ~ scope.version if base else ' v' ~ scope.version)) }}
+
+<div class="scope-meta">
+  {% if scope.locked_at %}<span class="tag ok">🔒 {{ _('확정') }}</span>
+  {% elif is_latest %}<span class="tag ok">{{ _('최신') }}</span>{% else %}<span class="tag">{{ _('대체됨') }}</span>{% endif %}
+  <span class="muted small">{{ _('{when} 회사에서 변경.', when=scope.created_at|dt) }}{% if scope.note %} {{ _(scope.note) }}{% endif %}</span>
   {% if versions|length > 1 %}
   <div class="seg versions">{% for x in versions %}<a class="{% if x.version == scope.version %}active{% endif %}" href="/houses/{{ house.id }}/scope/{{ x.version }}">v{{ x.version }}</a>{% endfor %}</div>
   {% endif %}
 </div>
-<p class="muted small">{{ _('작업 범위에는 가격이 들어가지 않습니다.') }}</p>
-{% for r in data.rooms %}
-<section class="card"><h2>{{ r.name }}</h2>{{ v.room_facts(r, r.acc) }}</section>
-{% endfor %}
-<section class="card"><h2>{{ _('실외기·프로젝트 공통') }}</h2>{{ v.common_facts(data.odus, data.common) }}</section>
+
+{% if diff %}
+  <p class="muted small">{{ _('바뀐 항목만 색으로 표시됩니다.') }} {% if diff.count == 0 %}{{ _('바뀐 것이 없습니다.') }}{% endif %}</p>
+  {% for r in diff.rooms if r.status != 'same' %}
+  <div class="card diff-card diff-{{ r.status }}">
+    <div class="q-head"><h3>{{ r.room.name }}</h3><span class="tag {{ 'ok' if r.status == 'added' else 'warn' }}">{{ _('추가') if r.status == 'added' else _('변경') }}</span></div>
+    {% if r.status == 'added' %}{{ v.room_facts(r.room, r.room.acc or {}) }}{% else %}{{ v.changes(r.changes) }}{% endif %}
+  </div>
+  {% endfor %}
+  {% for r in diff.removed %}
+  <div class="card diff-card diff-removed"><div class="q-head"><h3><s>{{ r.name }}</s></h3><span class="tag bad">{{ _('삭제') }}</span></div></div>
+  {% endfor %}
+  {% for o in diff.odus if o.status != 'same' %}
+  <div class="card diff-card diff-{{ o.status }}">
+    <div class="q-head"><h3>{{ _('실외기') }}{% if diff.odus|length > 1 %} {{ o.n }}{% endif %}</h3>
+      <span class="tag {{ 'ok' if o.status == 'added' else 'bad' if o.status == 'removed' else 'warn' }}">{{ _('추가') if o.status == 'added' else _('삭제') if o.status == 'removed' else _('변경') }}</span></div>
+    {% if o.changes %}{{ v.changes(o.changes) }}{% endif %}
+  </div>
+  {% endfor %}
+  {% if diff.common %}
+  <div class="card diff-card diff-changed"><div class="q-head"><h3>{{ _('프로젝트 공통') }}</h3><span class="tag warn">{{ _('변경') }}</span></div>{{ v.changes(diff.common) }}</div>
+  {% endif %}
+  {% set same = diff.rooms|selectattr('status', 'equalto', 'same')|map(attribute='room')|map(attribute='name')|list %}
+  {% if same %}<div class="card same-row"><span>{{ same|join(', ') }}</span><span class="muted small">{{ _('변경 없음') }}</span></div>{% endif %}
+  <details class="card full-scope"><summary>{{ _('v{n} 전체 내용 보기', n=scope.version) }}</summary>
+{% else %}
+  <div class="full-scope-open">
+{% endif %}
+    <p class="muted small">{{ _('작업 범위에는 가격이 들어가지 않습니다.') }}</p>
+    {% for r in data.rooms %}<section class="card"><h2>{{ r.name }}</h2>{{ v.room_facts(r, r.acc or {}) }}</section>{% endfor %}
+    <section class="card"><h2>{{ _('실외기·프로젝트 공통') }}</h2>{{ v.common_facts(data.odus, data.common) }}</section>
+{% if diff %}</details>{% else %}</div>{% endif %}
+
+<div class="row wrap scope-links">
+  <a class="btn" href="/houses/{{ house.id }}/docs?cat=lats">📄 LATS</a>
+  <a class="btn" href="/houses/{{ house.id }}/docs?cat=floorplan">▦ {{ _('평면도') }}</a>
+</div>
+
+{% if is_office %}
+<section class="card">
+  <h2>{{ _('설치업자 확인') }}</h2>
+  {% for a in acks %}<div class="q-row"><span>{{ a.name }}</span>{% if a.at %}<span class="tag ok">{{ _('확인함') }} · {{ a.at|dt }}</span>{% else %}<span class="tag warn">{{ _('아직 확인 안 함') }}</span>{% endif %}</div>
+  {% else %}<p class="muted small">{{ _('배정된 설치업자가 없습니다.') }}</p>{% endfor %}
+</section>
+{% if comments %}
+<section class="card"><h2>{{ _('설치업자 의견') }}</h2>
+  {% for c in comments %}<div class="comment"><b>{{ c.author_name }}</b> <span class="muted small">{{ c.created_at|dt }}</span><p class="body">{{ c.body }}</p></div>{% endfor %}
+</section>
+{% endif %}
+<div class="sticky-actions">
+  {% if not locked %}
+  <a class="btn primary block" href="/houses/{{ house.id }}/scope-edit">{{ _('새 버전 만들기 (v{n})', n=versions[-1].version + 1) }}</a>
+  {% if is_latest %}
+  <form method="post" action="/houses/{{ house.id }}/scope/{{ scope.version }}/lock" data-confirm="{{ _('v{n}을 확정할까요? 이후 변경은 변경 요청(VO)으로만 할 수 있습니다.', n=scope.version) }}" onsubmit="return confirm(this.dataset.confirm)">
+    <button class="btn block">🔒 {{ _('이 버전으로 확정') }}</button></form>
+  {% endif %}
+  {% else %}
+  <p class="muted small center">{{ _('확정된 작업 범위는 변경 요청(VO)으로만 바꿀 수 있습니다.') }}</p>
+  {% endif %}
+</div>
+{% else %}
+  {% for c in comments %}<div class="flash flash-ok">{{ _('보낸 의견') }} · {{ c.created_at|dt }}: {{ c.body }}</div>{% endfor %}
+  <form method="post" action="/houses/{{ house.id }}/scope/{{ scope.version }}/comment" class="hidden" id="comment">
+    <textarea name="body" rows="3" placeholder="{{ _('예: 서재 벽은 괜찮은데 측면 벽까지 배관이 약 14미터예요.') }}" required></textarea>
+    <button class="btn block">{{ _('의견 보내기') }}</button>
+  </form>
+  <div class="sticky-actions">
+    {% if acked %}
+      <p class="center ok-text">✓ {{ _('확인함') }} · {{ acked.at|dt }}</p>
+    {% else %}
+      <form method="post" action="/houses/{{ house.id }}/scope/{{ scope.version }}/ack"><button class="btn primary block">{{ _('확인했어요') }}</button></form>
+    {% endif %}
+    <button type="button" class="btn block" onclick="const f=document.getElementById('comment'); f.classList.remove('hidden'); f.querySelector('textarea').focus(); this.remove();">{{ _('의견 남기기') }}</button>
+  </div>
+{% endif %}
 {% endblock %}

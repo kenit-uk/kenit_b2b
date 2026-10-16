@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ _('작업 범위 편집') }} · {{ house.address }}{% endblock %}
+{% macro sel(name, options, value, blank=true) -%}
+<select name="{{ name }}">{% if blank %}<option value="">—</option>{% endif %}{% for k, label in options.items() %}<option value="{{ k }}" {% if value == k %}selected{% endif %}>{{ _(label) }}</option>{% endfor %}</select>
+{%- endmacro %}
+{% block content %}
+<a class="back" href="/houses/{{ house.id }}{% if last %}/scope/{{ last.version }}{% endif %}">← {{ house.ref_no }} · {{ house.address }}</a>
+<div class="page-head"><div>
+  <h1>{{ _('작업 범위 편집') }} → v{{ (last.version if last else 0) + 1 }}</h1>
+  <p class="muted small">{{ _('저장하면 새 버전이 됩니다. 이전 버전은 그대로 남고, 설치업자는 바뀐 것만 색으로 봅니다. 가격은 넣지 않습니다.') }}</p>
+</div></div>
+{% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+
+<form method="post" action="/houses/{{ house.id }}/scope-edit" class="scope-edit">
+  <h2>{{ _('방별 실내기') }}</h2>
+  {% set rooms = data.rooms + [{}, {}] %}
+  {% for r in rooms %}{% set i = loop.index0 %}{% set acc = r.acc or {} %}
+  <fieldset class="card scope-room {% if not r.name %}blank{% endif %}">
+    <div class="grid-4">
+      <label>{{ _('방 이름') }}<input name="r{{ i }}_name" value="{{ r.name or '' }}" placeholder="{{ _('새 방 (비워 두면 무시)') if not r.name else '' }}"></label>
+      <label>{{ _('실내기 형태') }}{{ sel('r' ~ i ~ '_indoor_type', C.INDOOR_TYPES, r.indoor_type) }}</label>
+      <label>{{ _('용량') }}{{ sel('r' ~ i ~ '_kw', C.KW_OPTIONS, r.kw) }}</label>
+      <label>{{ _('모델 (LATS 기준)') }}<input name="r{{ i }}_model" value="{{ r.model or '' }}" placeholder="{{ _('실내기 모델 번호') }}"></label>
+    </div>
+    <div class="grid-4">
+      <label>{{ _('설치 위치') }}<input name="r{{ i }}_location" value="{{ r.location or '' }}" placeholder="{{ _('예: 창문 위') }}"></label>
+      <label>{{ _('그릴') }}{{ sel('r' ~ i ~ '_grille', C.INCLUDE_CHOICES, acc.grille) }}</label>
+      <label>{{ _('플레넘') }}{{ sel('r' ~ i ~ '_plenum', C.INCLUDE_CHOICES, acc.plenum) }}</label>
+      <label>{{ _('점검구') }}{{ sel('r' ~ i ~ '_hatch', C.HATCH_CHOICES, acc.hatch) }}</label>
+    </div>
+    <div class="row wrap">
+      <span class="small muted">{{ _('온도 컨트롤') }}</span>
+      {% for k, label in C.CONTROLS.items() %}<label class="check"><input type="checkbox" name="r{{ i }}_controls" value="{{ k }}" {% if k in (acc.controls or []) %}checked{% endif %}> {{ _(label) }}</label>{% endfor %}
+      <label class="inline">{{ _('LCD 색상') }} {{ sel('r' ~ i ~ '_lcd_colour', C.LCD_COLOURS, acc.lcd_colour) }}</label>
+    </div>
+    <div class="grid-2">
+      <label>{{ _('기타 부가 사항') }}<input name="r{{ i }}_extra" value="{{ acc.extra or '' }}"></label>
+      <label>{{ _('메모') }}<input name="r{{ i }}_memo" value="{{ r.memo or '' }}"></label>
+    </div>
+    {% if r.name %}<label class="check danger"><input type="checkbox" name="r{{ i }}_remove" value="1"> {{ _('이 방 빼기') }}</label>{% endif %}
+  </fieldset>
+  {% endfor %}
+
+  <h2>{{ _('실외기') }}</h2>
+  {% set odus = data.odus + [{}] %}
+  {% for o in odus %}{% set i = loop.index0 %}
+  <fieldset class="card grid-4">
+    <label>{{ _('설치 방식') }}{{ sel('o' ~ i ~ '_mount', C.ODU_MOUNTS, o.mount) }}</label>
+    <label>{{ _('모델') }}<input name="o{{ i }}_model" value="{{ o.model or '' }}" placeholder="{{ _('실외기 모델 번호') }}"></label>
+    <label>{{ _('메모') }}<input name="o{{ i }}_note" value="{{ o.note or '' }}"></label>
+    {% if o.mount or o.model or o.note %}<label class="check danger"><input type="checkbox" name="o{{ i }}_remove" value="1"> {{ _('빼기') }}</label>{% endif %}
+  </fieldset>
+  {% endfor %}
+
+  <h2>{{ _('프로젝트 공통') }}</h2>
+  {% set c = data.common or {} %}
+  <fieldset class="card grid-4">
+    <label>{{ _('시스템') }}{{ sel('system', C.SYSTEMS, c.system) }}</label>
+    <label>{{ _('전기 작업 (실외기 → 분전반)') }}{{ sel('electric_work', C.NEEDED, c.electric_work) }}</label>
+    <label>{{ _('트렁킹 (프로젝트 공통)') }}{{ sel('trunking', C.TRUNKING, c.trunking) }}</label>
+    <label>{{ _('트렁킹 색상') }}{{ sel('trunking_colour', C.TRUNKING_COLOURS, c.trunking_colour) }}</label>
+    <label>{{ _('기타 색상') }}<input name="trunking_other" value="{{ c.trunking_other or '' }}"></label>
+    <label>{{ _('배관 경로') }}{{ sel('pipe_ok', C.YES_NO, c.pipe_ok) }}</label>
+    <label>{{ _('가까운 전원') }}{{ sel('power_near', C.YES_NO, c.power_near) }}</label>
+    <label>{{ _('접근') }}{{ sel('access', C.ACCESS, c.access) }}</label>
+  </fieldset>
+
+  <label class="card">{{ _('변경 내용 (필수)') }}
+    <textarea name="summary" rows="2" required placeholder="{{ _('예: 서재 실내기 추가, 침실 2 용량 2.5 → 3.5 kW') }}">{{ summary or '' }}</textarea>
+  </label>
+  <p class="muted small">{{ _('가격만 바뀐 경우에는 새 버전을 만들지 말고 견적 기록만 남기세요.') }}</p>
+  <div class="sticky-actions"><button class="btn primary block">{{ _('v{n}으로 저장', n=(last.version if last else 0) + 1) }}</button></div>
+</form>
+{% endblock %}

@@ -2,7 +2,9 @@
 {% macro room_facts(r, acc) -%}
 <dl class="kv">
   <div><dt>{{ _('실내기 형태') }}</dt><dd>{{ _(C.INDOOR_TYPES[r.indoor_type]) if r.indoor_type else '—' }}</dd></div>
-  <div><dt>{{ _('대략 용량') }}</dt><dd>{{ _(C.KW_OPTIONS[r.kw]) if r.kw else '—' }}</dd></div>
+  <div><dt>{{ _('용량') }}</dt><dd>{{ _(C.KW_OPTIONS[r.kw]) if r.kw else '—' }}</dd></div>
+  {% if r.model %}<div><dt>{{ _('모델') }}</dt><dd>{{ r.model }}</dd></div>{% endif %}
+  {% if r.location %}<div><dt>{{ _('설치 위치') }}</dt><dd>{{ r.location }}</dd></div>{% endif %}
   <div><dt>{{ _('온도 컨트롤') }}</dt><dd>
     {%- for c in acc.controls or [] %}{{ _(C.CONTROLS[c]) }}{% if c == 'lcd' and acc.lcd_colour %} ({{ _(C.LCD_COLOURS[acc.lcd_colour]) }}){% endif %}{% if not loop.last %} · {% endif %}{% else %}—{% endfor -%}
   </dd></div>
@@ -17,7 +19,7 @@
 {% macro common_facts(odus, common) -%}
 <dl class="kv">
   {% for o in odus %}
-  <div><dt>{{ _('실외기 {n}', n=loop.index) if odus|length > 1 else _('설치 방식') }}</dt><dd>{{ _(C.ODU_MOUNTS[o.mount]) if o.mount else '—' }}{% if o.note %} · {{ o.note }}{% endif %}</dd></div>
+  <div><dt>{{ _('실외기 {n}', n=loop.index) if odus|length > 1 else _('설치 방식') }}</dt><dd>{{ _(C.ODU_MOUNTS[o.mount]) if o.mount else '—' }}{% if o.model %} · {{ o.model }}{% endif %}{% if o.note %} · {{ o.note }}{% endif %}</dd></div>
   {% endfor %}
   <div><dt>{{ _('추천 시스템') }}</dt><dd>{{ _(C.SYSTEMS[common.system]) if common.system else '—' }}</dd></div>
   <div><dt>{{ _('배관 경로') }}</dt><dd>{% if common.pipe_ok %}<span class="tag {{ 'ok' if common.pipe_ok == 'yes' else 'warn' }}">{{ _('이상 없음') if common.pipe_ok == 'yes' else _('문제 있음') }}</span>{% else %}—{% endif %}</dd></div>
@@ -26,4 +28,38 @@
   <div><dt>{{ _('트렁킹 (프로젝트 공통)') }}</dt><dd>{{ _(C.TRUNKING[common.trunking]) if common.trunking else '—' }}{% if common.trunking_colour %} · {{ common.trunking_other if common.trunking_colour == 'other' and common.trunking_other else _(C.TRUNKING_COLOURS[common.trunking_colour]) }}{% endif %}</dd></div>
   <div><dt>{{ _('전기 작업 (실외기 → 분전반)') }}</dt><dd>{% if common.electric_work %}<span class="tag {{ 'warn' if common.electric_work == 'need' else 'ok' }}">{{ _(C.NEEDED[common.electric_work]) }}</span>{% else %}—{% endif %}</dd></div>
 </dl>
+{%- endmacro %}
+
+{# 변경 비교에서 값 하나를 사람이 읽는 말로 #}
+{% macro val(field, v) -%}
+  {%- if v in (none, '', []) -%}—
+  {%- elif field == 'indoor_type' -%}{{ _(C.INDOOR_TYPES.get(v, v)) }}
+  {%- elif field == 'kw' -%}{{ _(C.KW_OPTIONS.get(v, v)) }}
+  {%- elif field == 'controls' -%}{% for c in v %}{{ _(C.CONTROLS.get(c, c)) }}{% if not loop.last %} · {% endif %}{% endfor %}
+  {%- elif field in ('lcd_colour',) -%}{{ _(C.LCD_COLOURS.get(v, v)) }}
+  {%- elif field in ('grille', 'plenum') -%}{{ _(C.INCLUDE_CHOICES.get(v, v)) }}
+  {%- elif field == 'hatch' -%}{{ _(C.HATCH_CHOICES.get(v, v)) }}
+  {%- elif field == 'mount' -%}{{ _(C.ODU_MOUNTS.get(v, v)) }}
+  {%- elif field == 'system' -%}{{ _(C.SYSTEMS.get(v, v)) }}
+  {%- elif field in ('pipe_ok', 'power_near') -%}{{ _(C.YES_NO.get(v, v)) }}
+  {%- elif field == 'electric_work' -%}{{ _(C.NEEDED.get(v, v)) }}
+  {%- elif field == 'trunking' -%}{{ _(C.TRUNKING.get(v, v)) }}
+  {%- elif field == 'trunking_colour' -%}{{ _(C.TRUNKING_COLOURS.get(v, v)) }}
+  {%- elif field == 'access' -%}{{ _(C.ACCESS.get(v, v)) }}
+  {%- else -%}{{ v }}{%- endif -%}
+{%- endmacro %}
+
+{% set FIELD_LABELS = {'indoor_type': '실내기 형태', 'kw': '용량', 'model': '모델', 'location': '설치 위치', 'memo': '메모',
+  'controls': '온도 컨트롤', 'lcd_colour': '벽부착 LCD 색상', 'grille': '그릴 (Grille)', 'plenum': '플레넘 (Plenum)',
+  'hatch': '점검구 (Access hatch)', 'extra': '기타 부가 사항', 'mount': '설치 방식', 'note': '메모', 'system': '추천 시스템',
+  'pipe_ok': '배관 경로', 'power_near': '가까운 전원', 'electric_work': '전기 작업 (실외기 → 분전반)', 'trunking': '트렁킹 (프로젝트 공통)',
+  'trunking_colour': '트렁킹 색상', 'trunking_other': '기타 색상', 'access': '접근'} %}
+
+{% macro changes(list) -%}
+<ul class="change-list">
+  {% for f, old, new in list %}
+  <li><span class="muted">{{ _(FIELD_LABELS.get(f, f)) }}</span>
+    <s>{{ val(f, old) }}</s> → <b>{{ val(f, new) }}</b></li>
+  {% endfor %}
+</ul>
 {%- endmacro %}

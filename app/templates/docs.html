@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% import "_survey.html" as s with context %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ _('자료') }} · {{ house.address }}{% endblock %}
+{% block content %}
+{{ s.flow_head('/houses/' ~ house.id, house.address, _('자료')) }}
+<div class="chips">
+  <a class="chip {% if not cat %}active{% endif %}" href="?">{{ _('전체') }} <b>{{ all_docs|length }}</b></a>
+  {% for k, label in C.DOC_CATEGORIES.items() %}
+    {% set n = all_docs|selectattr('category', 'equalto', k)|list|length %}
+    {% if n or is_office %}<a class="chip {% if cat == k %}active{% endif %}" href="?cat={{ k }}">{{ _(label) }} <b>{{ n }}</b></a>{% endif %}
+  {% endfor %}
+</div>
+
+{% set ready = required.values()|select|list|length == required|length %}
+<div class="pack-box {{ 'ready' if ready else 'missing' }}">
+  <b>{{ _('1차 시공 전 필수 자료 준비 완료') if ready else _('1차 시공 전 필수 자료가 아직 다 없습니다') }}</b>
+  <div>{% for k, ok in required.items() %}<span>{{ '✓' if ok else '○' }} {{ _(C.REQUIRED_DOCS[k]) }}</span>{% endfor %}</div>
+  {% if not ready and is_office %}<p class="small">{{ _('세 가지가 모두 올라와야 1차 시공 일정을 예약할 수 있습니다.') }}</p>{% endif %}
+</div>
+
+{% set new_docs = docs|selectattr('my_ack', 'none')|list if not is_office else [] %}
+{% if new_docs %}<div class="flash flash-info">{{ _('회사에서 새 자료를 올렸습니다. 열어서 "확인함"을 눌러 주세요.') }}</div>{% endif %}
+
+{% for d in docs %}
+<a class="card doc-row {% if not is_office and not d.my_ack %}is-new{% endif %}" href="/houses/{{ house.id }}/docs/{{ d.id }}">
+  <span class="doc-icon">{{ '📄' if d.category in ('lats', 'agreement') else '▦' if d.category in ('drawing', 'floorplan') else '📘' }}</span>
+  <span class="doc-main">
+    <b>{{ d.title }}</b>
+    {% if not is_office %}{% if d.my_ack %}<span class="tag ok">{{ _('확인함') }}</span>{% else %}<span class="tag new">NEW</span>{% endif %}{% endif %}
+    <span class="muted small">{{ _(C.DOC_CATEGORIES[d.category]) }} · v{{ d.version }} · {{ d.created_at|dt }}{% if d.version_count > 1 %} · {{ _('이전 버전 {n}개', n=d.version_count - 1) }}{% endif %}</span>
+    {% if is_office and acks.get(d.id) %}
+      <span class="small">{% for a in acks[d.id] %}<span class="tag {{ 'ok' if a.at else 'warn' }}">{{ a.name }} {{ '✓' if a.at else _('미확인') }}</span> {% endfor %}</span>
+    {% endif %}
+  </span>
+  <span class="doc-go">›</span>
+</a>
+{% else %}
+<div class="card empty">{{ _('아직 올린 자료가 없습니다.') }}</div>
+{% endfor %}
+
+{% if is_office %}
+<section class="card">
+  <h2>{{ _('자료 올리기') }}</h2>
+  <p class="muted small">⚠ {{ _('견적서·인보이스 같은 가격 문서는 올리지 마세요. 설치업자도 이 자료를 봅니다.') }}</p>
+  <form method="post" action="/houses/{{ house.id }}/docs" enctype="multipart/form-data" class="stack" {{ m.upload_attrs(house.id) }}>
+    <div class="grid-3">
+      <label>{{ _('종류') }}<select name="category" required>{% for k, label in C.DOC_CATEGORIES.items() %}<option value="{{ k }}" {% if cat == k %}selected{% endif %}>{{ _(label) }}</option>{% endfor %}</select></label>
+      <label>{{ _('이름') }}<input name="title" required maxlength="120" placeholder="{{ _('예: 도면 — 침실 2') }}"></label>
+      <label>{{ _('메모') }}<input name="note" maxlength="1000" placeholder="{{ _('예: 침실 2 위치가 바뀌었습니다') }}"></label>
+    </div>
+    {{ m.file_input() }}
+    <button class="btn primary">{{ _('올리기') }}</button>
+  </form>
+</section>
+{% endif %}
+<script src="/static/upload.js"></script>
+{% endblock %}

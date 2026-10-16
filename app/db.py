@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS users (
   active        INTEGER NOT NULL DEFAULT 1,
   lang          TEXT,
   seen_baseline INTEGER NOT NULL DEFAULT 0,  -- 가입 시점의 마지막 변경이력 번호(그 이전 내용은 새 소식으로 치지 않음)
+  fgas_no       TEXT,     -- F-Gas 개인 자격 번호
+  fgas_expiry   TEXT,     -- 만료·재확인일 YYYY-MM-DD
+  fgas_company  TEXT,     -- 업체 인증 (예: REFCOM)
   created_at    TEXT NOT NULL
 );
 
@@ -177,9 +180,133 @@ CREATE TABLE IF NOT EXISTS scope_versions (
   note       TEXT,
   survey_id  INTEGER REFERENCES surveys(id),
   created_by INTEGER NOT NULL REFERENCES users(id),
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  locked_at  TEXT,          -- 확정(잠금). 이후 변경은 변경 요청(VO)으로만
+  locked_by  INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_scope_version ON scope_versions(house_id, version);
+
+-- 설치업자의 작업 범위 "확인했어요" 기록 (버전별)
+CREATE TABLE IF NOT EXISTS scope_acks (
+  scope_id INTEGER NOT NULL REFERENCES scope_versions(id),
+  user_id  INTEGER NOT NULL REFERENCES users(id),
+  at       TEXT NOT NULL,
+  PRIMARY KEY (scope_id, user_id)
+);
+
+-- 프로젝트 자료 (도면·평면도·LATS·카탈로그·협의 기록). 같은 자료의 새 버전은 group_id가 같다. 가격 문서는 올리지 않는다.
+CREATE TABLE IF NOT EXISTS documents (
+  id         {pk},
+  house_id   INTEGER NOT NULL REFERENCES houses(id),
+  group_id   INTEGER,
+  version    INTEGER NOT NULL DEFAULT 1,
+  category   TEXT NOT NULL,
+  title      TEXT NOT NULL,
+  note       TEXT,
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  removed_at TEXT,
+  removed_by INTEGER REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_documents_house ON documents(house_id);
+
+CREATE TABLE IF NOT EXISTS doc_acks (
+  document_id INTEGER NOT NULL REFERENCES documents(id),
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  at          TEXT NOT NULL,
+  PRIMARY KEY (document_id, user_id)
+);
+
+-- 방문: 현장조사 / 1차 시공 / 2차 시공 / 기타. 한 프로젝트가 여러 날·여러 방문으로 나뉜다.
+--  status: requested(설치업자에게 날짜 후보 요청) → options(후보 받음) → confirmed(확정)
+--          proposed(회사가 날짜 제안, 설치업자 가능 여부 대기) → confirmed / declined
+--          done(작업 끝 보고됨), cancelled
+CREATE TABLE IF NOT EXISTS visits (
+  id              {pk},
+  house_id        INTEGER NOT NULL REFERENCES houses(id),
+  kind            TEXT NOT NULL,
+  installer_id    INTEGER REFERENCES users(id),
+  date            TEXT,            -- YYYY-MM-DD (런던)
+  start_time      TEXT,            -- HH:MM
+  end_time        TEXT,
+  status          TEXT NOT NULL,
+  note            TEXT,
+  override_reason TEXT,            -- 중복 배정·F-Gas 경고를 무시하고 예약한 이유
+  created_by      INTEGER NOT NULL REFERENCES users(id),
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_visits_house ON visits(house_id);
+CREATE INDEX IF NOT EXISTS idx_visits_installer_date ON visits(installer_id, date);
+
+CREATE TABLE IF NOT EXISTS visit_date_options (
+  id         {pk},
+  visit_id   INTEGER NOT NULL REFERENCES visits(id),
+  date       TEXT NOT NULL,
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL
+);
+
+-- 현장 도착 / 오늘 작업 끝: 누르는 순간의 시각 + 위치 1회만 (백그라운드 추적 없음)
+CREATE TABLE IF NOT EXISTS checkins (
+  id        {pk},
+  visit_id  INTEGER NOT NULL REFERENCES visits(id),
+  user_id   INTEGER NOT NULL REFERENCES users(id),
+  kind      TEXT NOT NULL,         -- arrive / finish
+  at        TEXT NOT NULL,
+  lat       REAL,
+  lng       REAL,
+  accuracy  REAL
+);
+CREATE INDEX IF NOT EXISTS idx_checkins_visit ON checkins(visit_id);
+
+-- 오늘 작업 끝 보고 → 회사 승인 대기
+CREATE TABLE IF NOT EXISTS day_reports (
+  id          {pk},
+  visit_id    INTEGER NOT NULL REFERENCES visits(id),
+  house_id    INTEGER NOT NULL REFERENCES houses(id),
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  work        TEXT NOT NULL DEFAULT '[]',   -- 배관·실내기·실외기·전기·시운전 (복수)
+  has_problem INTEGER NOT NULL DEFAULT 0,
+  note        TEXT,
+  created_at  TEXT NOT NULL,
+  reviewed_by INTEGER REFERENCES users(id),
+  reviewed_at TEXT
+);
+
+-- 변경 요청 (Variation, VO-1 …). pending = 시공 금지(고객 승인 대기), approved = 시공 가능, rejected = 원래대로
+CREATE TABLE IF NOT EXISTS variations (
+  id            {pk},
+  house_id      INTEGER NOT NULL REFERENCES houses(id),
+  number        INTEGER NOT NULL,
+  visit_id      INTEGER REFERENCES visits(id),
+  kind          TEXT NOT NULL,
+  body          TEXT,
+  status        TEXT NOT NULL DEFAULT 'pending',
+  created_by    INTEGER NOT NULL REFERENCES users(id),
+  created_at    TEXT NOT NULL,
+  decided_by    INTEGER REFERENCES users(id),
+  decided_at    TEXT,
+  decision_note TEXT,
+  reviewed_by   INTEGER REFERENCES users(id),
+  reviewed_at   TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_variation_number ON variations(house_id, number);
+
+-- 설치업자 → 회사: 문제 보고, 회사에 메시지, 작업 범위 의견. 회사가 확인하면 reviewed_at.
+CREATE TABLE IF NOT EXISTS messages (
+  id          {pk},
+  house_id    INTEGER NOT NULL REFERENCES houses(id),
+  kind        TEXT NOT NULL,       -- problem / message / scope_comment
+  visit_id    INTEGER REFERENCES visits(id),
+  scope_id    INTEGER REFERENCES scope_versions(id),
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  body        TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  reviewed_by INTEGER REFERENCES users(id),
+  reviewed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_messages_house ON messages(house_id);
 
 -- v1 사진·파일 (방 사진, 실외기 사진, 분전반 사진 등). owner_type + owner_id 로 어디에 붙은 파일인지 나타낸다.
 CREATE TABLE IF NOT EXISTS media (
@@ -194,7 +321,9 @@ CREATE TABLE IF NOT EXISTS media (
   uploaded_by   INTEGER NOT NULL REFERENCES users(id),
   created_at    TEXT NOT NULL,
   deleted_by    INTEGER REFERENCES users(id),
-  deleted_at    TEXT
+  deleted_at    TEXT,
+  tag           TEXT,     -- 현장 사진의 방 태그
+  visit_id      INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_media_owner ON media(owner_type, owner_id);
 
@@ -309,6 +438,7 @@ def init_db() -> dict:
                 conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone_e164)")
                 for col, typ in HOUSE_NEW_COLS:
                     conn.execute(f"ALTER TABLE houses ADD COLUMN IF NOT EXISTS {col} {typ}")
+                ensure_columns(conn)
         else:
             conn.raw.execute("PRAGMA journal_mode = WAL")
             conn.raw.executescript(SCHEMA.format(pk="INTEGER PRIMARY KEY AUTOINCREMENT", nocase="COLLATE NOCASE"))
@@ -324,6 +454,7 @@ def init_db() -> dict:
             for col, typ in HOUSE_NEW_COLS:
                 if col not in house_cols:
                     conn.execute(f"ALTER TABLE houses ADD COLUMN {col} {typ}")
+            ensure_columns(conn)
             conn.raw.commit()
             _sqlite_upgrade_users(conn)
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone_e164)")
@@ -349,6 +480,21 @@ def init_db() -> dict:
 
 
 HOUSE_NEW_COLS = [("ref_no", "TEXT"), ("stage", "INTEGER NOT NULL DEFAULT 1"), ("on_hold", "INTEGER NOT NULL DEFAULT 0")]
+# 이전 버전 DB에 나중에 추가된 칸 (테이블, 칸, 형식)
+NEW_COLS = [
+    ("scope_versions", "locked_at", "TEXT"), ("scope_versions", "locked_by", "INTEGER"),
+    ("media", "tag", "TEXT"),            # 현장 사진의 방 태그
+    ("media", "visit_id", "INTEGER"),
+    ("users", "fgas_no", "TEXT"), ("users", "fgas_expiry", "TEXT"), ("users", "fgas_company", "TEXT"),
+]
+
+
+def ensure_columns(conn: "Conn") -> None:
+    for table, col, typ in NEW_COLS:
+        if conn.pg:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}")
+        elif col not in {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
 
 
 def ref_no_for(house_id: int) -> str:

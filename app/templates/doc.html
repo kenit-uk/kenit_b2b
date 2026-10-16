@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "_survey.html" as s with context %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ doc.title }} · {{ house.address }}{% endblock %}
+{% block content %}
+{{ s.flow_head('/houses/' ~ house.id ~ '/docs', house.address ~ ' · ' ~ _(C.DOC_CATEGORIES[doc.category]), doc.title) }}
+{% if versions|length > 1 %}
+<div class="seg versions">
+  {% for x in versions %}<a class="{% if x.id == doc.id %}active{% endif %}" href="/houses/{{ house.id }}/docs/{{ x.id }}">v{{ x.version }}{% if loop.first %} · {{ _('최신') }}{% else %} · {{ _('이전') }}{% endif %}</a>{% endfor %}
+</div>
+{% endif %}
+{% if not is_latest %}<div class="flash flash-warn">{{ _('이전 버전입니다. 최신 버전을 확인하세요.') }}</div>{% endif %}
+
+<div class="card doc-viewer">
+  {% if media %}
+    {% if media.mime == 'application/pdf' %}
+      <object data="/media/{{ media.id }}" type="application/pdf" class="pdf"><p class="muted">{{ _('미리보기를 열 수 없습니다. 내려받아 보세요.') }}</p></object>
+    {% elif media.mime.startswith('image/') %}
+      <a href="/media/{{ media.id }}" target="_blank"><img src="/media/{{ media.id }}" alt="{{ doc.title }}"></a>
+    {% else %}<p class="muted">{{ media.original_name }}</p>{% endif %}
+  {% endif %}
+  <p class="muted small">{{ _('두 손가락으로 확대할 수 있습니다.') }}{% if doc.note %} {{ _('회사 메모') }}: "{{ doc.note }}"{% endif %}</p>
+</div>
+
+{% if is_office %}
+<section class="card">
+  <h2>{{ _('새 버전 올리기') }}</h2>
+  <form method="post" action="/houses/{{ house.id }}/docs" enctype="multipart/form-data" class="stack" {{ m.upload_attrs(house.id) }}>
+    <input type="hidden" name="group_id" value="{{ doc.group_id }}">
+    <label>{{ _('메모') }}<input name="note" maxlength="1000" placeholder="{{ _('무엇이 바뀌었는지') }}"></label>
+    {{ m.file_input() }}
+    <button class="btn primary">{{ _('v{n}으로 올리기', n=versions[0].version + 1) }}</button>
+  </form>
+  <form method="post" action="/houses/{{ house.id }}/docs/{{ doc.id }}/remove" data-confirm="{{ _('이 자료를 내릴까요? 기록은 남습니다.') }}" onsubmit="return confirm(this.dataset.confirm)">
+    <button class="btn small danger">{{ _('자료 내리기') }}</button></form>
+</section>
+{% endif %}
+
+<div class="sticky-actions two">
+  {% if media %}<a class="btn" href="/media/{{ media.id }}?download=1">⬇ {{ _('내려받기') }}</a>{% endif %}
+  {% if not is_office %}
+    {% if my_ack %}<span class="btn ok-btn">✓ {{ _('확인함') }} · {{ my_ack|dt }}</span>
+    {% else %}<form method="post" action="/houses/{{ house.id }}/docs/{{ doc.id }}/ack"><button class="btn primary block">{{ _('확인함') }}</button></form>{% endif %}
+  {% endif %}
+</div>
+<p class="muted small center">{{ _('가격 정보는 없습니다.') }}</p>
+<script src="/static/upload.js"></script>
+{% endblock %}

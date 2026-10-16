@@ -252,6 +252,14 @@ def get_house_or_404(conn, house_id: int, user=None):
     return house
 
 
+def project_doc_summary(conn, house_id: int, user) -> dict:
+    from .documents import latest_docs, required_status  # 순환 import를 피하려고 여기서 불러온다
+
+    docs = latest_docs(conn, house_id, user)
+    return {"docs": docs, "doc_required": required_status(docs),
+            "docs_unacked": sum(1 for d in docs if not d["my_ack"]) if not is_office(user) else 0}
+
+
 def get_entry_or_404(conn, entry_id: int, user):
     entry = conn.execute(
         """SELECT e.*, a.name AS author_name, a.role AS author_role, u.name AS updater_name
@@ -741,9 +749,13 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
                       (SELECT COUNT(*) FROM survey_rooms r WHERE r.survey_id = s.id AND r.removed_at IS NULL
                        AND r.photo_request IS NOT NULL) AS photo_requests
                FROM surveys s WHERE s.house_id = ?""", (house_id,)).fetchone(),
-        scopes=conn.execute("SELECT version, created_at FROM scope_versions WHERE house_id = ? ORDER BY version DESC",
-                            (house_id,)).fetchall(),
-        SURVEY_STATUS=C.SURVEY_STATUS,
+        scopes=conn.execute(
+            """SELECT s.version, s.created_at, s.locked_at,
+                      (SELECT at FROM scope_acks a WHERE a.scope_id = s.id AND a.user_id = ?) AS my_ack,
+                      (SELECT COUNT(*) FROM scope_acks a WHERE a.scope_id = s.id) AS ack_count
+               FROM scope_versions s WHERE s.house_id = ? ORDER BY s.version DESC""", (user["id"], house_id)).fetchall(),
+        **project_doc_summary(conn, house_id, user),
+        SURVEY_STATUS=C.SURVEY_STATUS, C_REQUIRED=C.REQUIRED_DOCS,
         can_edit=lambda e: can_edit(user, e),
     )
 
@@ -1093,5 +1105,8 @@ def invite_regenerate(request: Request, role: str, user=Depends(admin_user), con
 # ---------- v1 화면 (별도 파일) ----------
 # 맨 아래에서 불러온다: 이 파일의 공통 함수(render, flash …)를 가져다 쓰기 때문
 from .survey import router as survey_router  # noqa: E402
+from .scope import router as scope_router  # noqa: E402
+from .documents import router as documents_router  # noqa: E402
 
-app.include_router(survey_router)
+for _r in (survey_router, scope_router, documents_router):
+    app.include_router(_r)
