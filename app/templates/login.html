@@ -3,8 +3,11 @@
 {% block main_class %}auth{% endblock %}
 {% block content %}
 <div class="card auth-card">
-  <h1>❄ {{ BRAND }}</h1>
-  <p class="muted">{{ _('관리자·매니저·설치업자 전용') }}</p>
+  <div class="auth-brand">
+    <div class="auth-logo">{% include "_logo.html" %}</div>
+    <h1>Woodstone <span>JobTrack</span></h1>
+    <p class="muted small">{{ COMPANY }}<br>{{ _('관리자·매니저·설치업자 전용') }}</p>
+  </div>
   {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
 
   {% set use_email = email or not SMS_ENABLED %}

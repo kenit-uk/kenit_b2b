@@ -1,11 +1,11 @@
 {
-  "name": "Kenit - Aircondition",
-  "short_name": "Kenit",
+  "name": "Woodstone JobTrack",
+  "short_name": "JobTrack",
   "start_url": "/houses",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f4f6f9",
-  "theme_color": "#12243d",
+  "theme_color": "#181B2B",
   "icons": [
     { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
     { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }

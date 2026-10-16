@@ -1,4 +1,4 @@
-# Kenit - Aircondition (kenit_b2b)
+# Woodstone JobTrack (kenit_b2b)
 
 런던 에어컨 설치 현장 기록 서비스입니다. 관리자와 설치업자만 가입해서 씁니다. FastAPI + SQLite라 별도 DB 서버가 필요 없습니다.
 화면은 **한국어 / English**로 쓸 수 있습니다(상단에서 전환, 사용자별 저장).
@@ -56,7 +56,7 @@ TEST_PG_URL=postgresql://... tests/run.sh               # SQLite + PostgreSQL (�
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | 없음 | R2 API 토큰(Object Read & Write) |
 | `S3_REGION` | `auto` | R2는 `auto` |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | 없음 | 문자 인증 발송(Twilio). 없으면 로컬에서는 코드가 서버 로그에 찍히는 시험 모드, Vercel에서는 문자 로그인이 꺼짐 |
-| `TWILIO_FROM` | 없음 | 발신 번호(+44…) 또는 영문 발신자명(예: `Kenit`). `TWILIO_MESSAGING_SERVICE_SID`를 대신 써도 됨 |
+| `TWILIO_FROM` | 없음 | 발신 번호(+44…) 또는 영문 발신자명(예: `Woodstone`). `TWILIO_MESSAGING_SERVICE_SID`를 대신 써도 됨 |
 
 ## 배포와 데이터 보호
 

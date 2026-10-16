@@ -106,6 +106,7 @@ templates.env.filters["fromjson"] = lambda s: json.loads(s) if s else {}
 templates.env.filters["phone"] = sms.format_phone
 templates.env.globals.update(
     BRAND=C.BRAND,
+    COMPANY=C.COMPANY,
     STATUSES=C.STATUSES,
     ROLES=C.ROLES,
     ENTRY_TYPES=C.ENTRY_TYPES,
@@ -396,7 +397,7 @@ def code_text(request: Request, kind: str) -> str:
     """문자 본문. 마지막 줄은 안드로이드 크롬이 코드를 자동으로 채우는 형식(@도메인 #코드)."""
     lang = detect_lang(request)
     head = translate(lang, "{brand} 로그인 코드: {{code}} (10분간 유효)" if kind == "login"
-                     else "{brand} 휴대폰 번호 확인 코드: {{code}} (10분간 유효)", brand="Kenit")
+                     else "{brand} 휴대폰 번호 확인 코드: {{code}} (10분간 유효)", brand=C.BRAND_SHORT)
     return f"{head}\n\n@{request.url.hostname} #{{code}}"
 
 
@@ -943,7 +944,7 @@ async def invite_by_phone(request: Request, user=Depends(office_user), conn=Depe
         )
     if data["notify"] and sms.SMS_ENABLED:
         login_url = f"{request.url.scheme}://{request.url.netloc}/login"
-        text = translate(detect_lang(request), "{brand}에 등록되었습니다. 이 번호로 로그인하세요: {url}", brand="Kenit", url=login_url)
+        text = translate(detect_lang(request), "{brand}에 등록되었습니다. 이 번호로 로그인하세요: {url}", brand=C.BRAND_SHORT, url=login_url)
         try:
             sms.sender.send(phone, text)
         except sms.SmsError as e:

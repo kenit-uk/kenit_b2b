@@ -90,7 +90,7 @@ class TwilioSender:
     def __init__(self):
         self.sid = os.environ["TWILIO_ACCOUNT_SID"]
         self.token = os.environ["TWILIO_AUTH_TOKEN"]
-        self.sender = os.environ.get("TWILIO_FROM", "")  # 발신 번호 또는 영문 발신자명(예: Kenit)
+        self.sender = os.environ.get("TWILIO_FROM", "")  # 발신 번호 또는 영문 발신자명(예: Woodstone)
         self.service = os.environ.get("TWILIO_MESSAGING_SERVICE_SID", "")
 
     def send(self, to: str, text: str) -> None:

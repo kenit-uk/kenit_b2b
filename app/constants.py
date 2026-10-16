@@ -1,5 +1,7 @@
 # 회사명 (번역하지 않음)
-BRAND = "Kenit - Aircondition"
+BRAND = "Woodstone JobTrack"
+BRAND_SHORT = "Woodstone"  # 문자 메시지 등 짧게 쓸 때
+COMPANY = "Woodstone Building Services Ltd"
 
 # 계약 상태 (표시 순서)
 STATUSES = ["검토전", "검토필요", "검토중", "견적완료", "설치중", "설치완료", "보류"]

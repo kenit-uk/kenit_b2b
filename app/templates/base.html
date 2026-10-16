@@ -7,12 +7,13 @@
   <link rel="stylesheet" href="/static/style.css">
   {# 휴대폰 홈 화면에 추가하면 앱처럼 열린다 #}
   <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
-  <meta name="theme-color" content="#12243d">
+  <meta name="theme-color" content="#181B2B">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Kenit">
+  <meta name="apple-mobile-web-app-title" content="JobTrack">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body class="{% if user %}with-sidebar{% endif %}">
@@ -29,7 +30,7 @@
   {# PC: 왼쪽 사이드바 #}
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
-      <a class="brand" href="/houses">❄ {{ BRAND }}</a>
+      <a class="brand" href="/houses">{% include "_logo.html" %}<span class="brand-name">Woodstone <b>JobTrack</b></span></a>
     </div>
 
     <div class="sidebar-body">
@@ -57,7 +58,7 @@
   </aside>
 
   {# 휴대폰: 위쪽 얇은 바 + 아래쪽 탭 메뉴 #}
-  <header class="mobile-top"><a class="brand" href="/houses">❄ {{ BRAND }}</a></header>
+  <header class="mobile-top"><a class="brand" href="/houses">{% include "_logo.html" %}<span class="brand-name">Woodstone <b>JobTrack</b></span></a></header>
   <nav class="tabbar" aria-label="{{ _('메뉴') }}">
     <a class="{% if path.startswith('/houses') %}active{% endif %}" href="/houses">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
