@@ -134,6 +134,40 @@ legend { font-size: .88rem; font-weight: 600; color: #3b4656; margin-bottom: 6px
 .status-5 { --c: var(--s5); } .status-6 { --c: var(--s6); } .status-7 { --c: var(--s7); }
 .badge[class*="status-"] { background: var(--c); }
 
+/* 프로젝트 단계 (9단계) */
+.ref-no { font-family: ui-monospace, Menlo, monospace; font-size: .8rem; color: var(--muted); letter-spacing: .02em; }
+.ref-line { margin-bottom: 2px; }
+.stage-badge { display: inline-flex; align-items: center; gap: 5px; font-size: .8rem; font-weight: 700; padding: 3px 10px 3px 4px;
+  border-radius: 99px; background: var(--navy-tint); color: var(--navy); white-space: nowrap; }
+.stage-badge b { display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; border-radius: 50%;
+  background: var(--navy); color: #fff; font-size: .72rem; }
+.stage-badge.stage-6, .stage-badge.stage-7 { background: var(--orange-tint); color: #8A3F0C; }
+.stage-badge.stage-6 b, .stage-badge.stage-7 b { background: var(--orange); color: var(--navy); }
+.stage-badge.stage-9 { background: var(--ok-bg); color: var(--ok-ink); }
+.stage-badge.stage-9 b { background: #2b8a3e; }
+.hold-badge { display: inline-block; font-size: .75rem; font-weight: 800; padding: 3px 9px; border-radius: 99px; background: #fdecea; color: var(--err-ink); }
+.badges { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.chip.stage-1, .chip.stage-2, .chip.stage-3, .chip.stage-4, .chip.stage-5 { --c: #9aa1b8; }
+.chip.stage-6, .chip.stage-7 { --c: var(--orange); }
+.chip.stage-8 { --c: var(--navy); }
+.chip.stage-9 { --c: #2b8a3e; }
+.chip.chip-hold { --c: var(--err-ink); }
+
+.stagebar { margin: 12px 0 6px; }
+.stagebar-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.stagebar ol { list-style: none; display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; margin: 0; padding: 0; }
+.stagebar li { font-size: .7rem; color: var(--muted); }
+.stagebar li::before { content: ""; display: block; height: 6px; border-radius: 3px; background: #DDE1EA; margin-bottom: 4px; }
+.stagebar li.done::before { background: var(--navy); }
+.stagebar li.now::before { background: var(--orange); }
+.stagebar li.now { color: var(--navy); font-weight: 800; }
+.stagebar.on-hold li.now::before { background: repeating-linear-gradient(45deg, var(--orange), var(--orange) 4px, #f7d2b4 4px, #f7d2b4 8px); }
+.member-list { list-style: none; margin: 0 0 12px; padding: 0; }
+.member-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.member-list form { margin: 0; }
+.row.wrap { flex-wrap: wrap; }
+.row.wrap form { margin: 0; }
+
 /* 새 소식(N) 표시 */
 .new-badge {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
@@ -335,6 +369,7 @@ table.history { width: 100%; border-collapse: collapse; font-size: .88rem; }
   .tab { flex: none; }
   .inline-search { flex-wrap: wrap; }
   .attachments { grid-template-columns: repeat(2, 1fr); }
+  .stagebar li span { display: none; }   /* 휴대폰: 막대만, 현재 단계 이름은 위에 표시 */
 
   /* 표 → 카드 */
   table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }

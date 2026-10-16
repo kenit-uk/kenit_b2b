@@ -18,5 +18,11 @@ for p in ["app/main.py", "app/sms.py"]:
 keys |= set(C.STATUSES) | set(C.ROLES.values()) | set(C.ENTRY_TYPES.values()) | set(C.AUDIT_ACTIONS.values()) \
      | set(C.HOUSE_LABELS.values()) | set(C.CONVERSATION_CHANNELS) | {p for p in C.PROPERTY_TYPES if hangul.search(p)}
 missing = sorted(k for k in keys if hangul.search(k) and k not in EN)
+# 같은 한국어 키가 사전에 두 번 있으면 뒤의 것이 앞의 번역을 덮어쓴다 → 오류로 처리
+src = open("app/i18n.py").read()
+dups = sorted({k for k in re.findall(r'^\s+"([^"]+)":', src, re.M) if len(re.findall(r'^\s+"' + re.escape(k) + r'":', src, re.M)) > 1})
+if dups:
+    print("duplicate keys:", dups)
+    missing = missing or dups
 print(len(keys), "keys checked;", "missing:", missing or "none")
 sys.exit(1 if missing else 0)

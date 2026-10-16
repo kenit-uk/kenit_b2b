@@ -35,7 +35,7 @@
 
     <div class="sidebar-body">
       <nav class="side-nav">
-        <a class="{% if path.startswith('/houses') %}active{% endif %}" href="/houses">📋 {{ _('현장 목록') }}{% if unread_total %}<span class="count" title="{{ _('확인하지 않은 현장') }}">{{ unread_total }}</span>{% endif %}</a>
+        <a class="{% if path.startswith('/houses') %}active{% endif %}" href="/houses">📋 {{ _('프로젝트') if is_office else _('내 작업') }}{% if unread_total %}<span class="count" title="{{ _('확인하지 않은 현장') }}">{{ unread_total }}</span>{% endif %}</a>
       </nav>
 
       {% if is_office %}
@@ -62,7 +62,7 @@
   <nav class="tabbar" aria-label="{{ _('메뉴') }}">
     <a class="{% if path.startswith('/houses') %}active{% endif %}" href="/houses">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-      <span>{{ _('현장') }}</span>
+      <span>{{ _('프로젝트') if is_office else _('내 작업') }}</span>
       {% if unread_total %}<b class="tab-count">{{ unread_total }}</b>{% endif %}
     </a>
     {% if is_office %}

@@ -63,7 +63,10 @@ CREATE TABLE IF NOT EXISTS houses (
   landlord_phone  TEXT,
   landlord_email  TEXT,
   memo            TEXT,
-  status          TEXT NOT NULL,
+  status          TEXT NOT NULL,  -- 이전 버전 상태값 (지금은 stage 사용)
+  ref_no          TEXT,           -- 관리번호 WS-100001
+  stage           INTEGER NOT NULL DEFAULT 1,
+  on_hold         INTEGER NOT NULL DEFAULT 0,
   created_by      INTEGER NOT NULL REFERENCES users(id),
   created_at      TEXT NOT NULL,
   updated_by      INTEGER REFERENCES users(id),
@@ -112,6 +115,15 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_audit_house ON audit_log(house_id);
+
+-- 프로젝트에 배정된 설치업자 (설치업자는 배정된 프로젝트만 본다)
+CREATE TABLE IF NOT EXISTS house_members (
+  house_id  INTEGER NOT NULL REFERENCES houses(id),
+  user_id   INTEGER NOT NULL REFERENCES users(id),
+  added_by  INTEGER REFERENCES users(id),
+  added_at  TEXT NOT NULL,
+  PRIMARY KEY (house_id, user_id)
+);
 
 -- 사용자별로 각 현장의 변경이력을 어디까지 확인했는지 (N 표시용)
 CREATE TABLE IF NOT EXISTS house_views (
@@ -220,6 +232,8 @@ def init_db() -> dict:
                 conn.execute("ALTER TABLE users ALTER COLUMN email DROP NOT NULL")
                 conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_e164 TEXT")
                 conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone_e164)")
+                for col, typ in HOUSE_NEW_COLS:
+                    conn.execute(f"ALTER TABLE houses ADD COLUMN IF NOT EXISTS {col} {typ}")
         else:
             conn.raw.execute("PRAGMA journal_mode = WAL")
             conn.raw.executescript(SCHEMA.format(pk="INTEGER PRIMARY KEY AUTOINCREMENT", nocase="COLLATE NOCASE"))
@@ -231,11 +245,16 @@ def init_db() -> dict:
                 conn.execute("ALTER TABLE users ADD COLUMN seen_baseline INTEGER NOT NULL DEFAULT 0")
             if "phone_e164" not in user_cols:
                 conn.execute("ALTER TABLE users ADD COLUMN phone_e164 TEXT")
+            house_cols = {r["name"] for r in conn.execute("PRAGMA table_info(houses)")}
+            for col, typ in HOUSE_NEW_COLS:
+                if col not in house_cols:
+                    conn.execute(f"ALTER TABLE houses ADD COLUMN {col} {typ}")
             conn.raw.commit()
             _sqlite_upgrade_users(conn)
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone_e164)")
             conn.raw.commit()
         _backfill_login_phones(conn)
+        _migrate_projects(conn)
         with conn:
             for role in ("staff", "manager", "installer"):
                 code = secrets.token_urlsafe(9)
@@ -246,6 +265,33 @@ def init_db() -> dict:
     finally:
         conn.close()
     return created
+
+
+HOUSE_NEW_COLS = [("ref_no", "TEXT"), ("stage", "INTEGER NOT NULL DEFAULT 1"), ("on_hold", "INTEGER NOT NULL DEFAULT 0")]
+
+
+def ref_no_for(house_id: int) -> str:
+    return f"WS-{100000 + house_id}"
+
+
+def _migrate_projects(conn: Conn) -> None:
+    """한 번만: 이전 상태값 → 9단계·보류, 관리번호 부여, 기존 설치업자를 기존 프로젝트에 배정(보이던 것이 그대로 보이도록)."""
+    from .constants import STATUS_TO_STAGE
+
+    with conn:
+        for r in conn.execute("SELECT id FROM houses WHERE ref_no IS NULL").fetchall():
+            conn.execute("UPDATE houses SET ref_no = ? WHERE id = ?", (ref_no_for(r["id"]), r["id"]))
+        if conn.execute("SELECT 1 FROM settings WHERE key = 'projects_migrated'").fetchone():
+            return
+        for r in conn.execute("SELECT id, status FROM houses").fetchall():
+            conn.execute("UPDATE houses SET stage = ?, on_hold = ? WHERE id = ?",
+                         (STATUS_TO_STAGE.get(r["status"], 1), 1 if r["status"] == "보류" else 0, r["id"]))
+        ts = now()
+        for h in conn.execute("SELECT id FROM houses").fetchall():
+            for u in conn.execute("SELECT id FROM users WHERE role = 'installer'").fetchall():
+                conn.execute("INSERT INTO house_members (house_id, user_id, added_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+                             (h["id"], u["id"], ts))
+        conn.execute("INSERT INTO settings (key, value) VALUES ('projects_migrated', '1') ON CONFLICT(key) DO NOTHING")
 
 
 def _backfill_login_phones(conn: Conn) -> None:

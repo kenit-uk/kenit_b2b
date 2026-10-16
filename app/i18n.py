@@ -11,6 +11,42 @@ EN = {
     "사용자": "Users",
     "로그아웃": "Log out",
     "메뉴": "Menu",
+    "현장조사 예약": "Survey booking",
+    "현장조사": "Site survey",
+    "견적·범위 협의": "Quote & scope",
+    "최종 확정": "Scope agreed",
+    "일정 조율": "Scheduling",
+    "1차 시공": "First fix",
+    "2차 시공": "Second fix",
+    "인수인계": "Handover",
+    "완료 확인": "Completed",
+    "프로젝트": "Projects",
+    "내 작업": "My jobs",
+    "{n}단계 중 {i}단계": "Stage {i} of {n}",
+    "단계": "Stage",
+    "단계 이동": "Move stage",
+    "단계 변경": "Stage changed",
+    "보류 해제": "Resume",
+    "보류를 해제할까요?": "Take this project off hold?",
+    "이 프로젝트를 보류할까요?": "Put this project on hold?",
+    "배정된 설치업자": "Assigned installers",
+    "{name}님의 배정을 해제할까요? 이 프로젝트가 더 이상 보이지 않게 됩니다.": "Unassign {name}? They will no longer see this project.",
+    "배정 해제": "Unassign",
+    "배정": "Assign",
+    "아직 배정된 설치업자가 없습니다. 설치업자는 배정된 프로젝트만 볼 수 있습니다.": "No installers assigned yet. Installers only see projects they are assigned to.",
+    "설치업자 배정": "Installer assigned",
+    "설치업자 배정 해제": "Installer unassigned",
+    "{n}단계 '{stage}'(으)로 옮겼습니다.": "Moved to stage {n}: '{stage}'.",
+    "프로젝트를 보류했습니다.": "Project put on hold.",
+    "보류를 해제했습니다.": "Project resumed.",
+    "{name}님을 배정했습니다. 이제 이 프로젝트가 보입니다.": "{name} assigned. They can now see this project.",
+    "{name}님의 배정을 해제했습니다. 작성한 기록은 그대로 남습니다.": "{name} unassigned. Their records are kept.",
+    "프로젝트를 만들었습니다. 설치업자를 배정하면 그 설치업자에게 보입니다.": "Project created. Assign an installer so they can see it.",
+    "알 수 없는 단계입니다.": "Unknown stage.",
+    "설치업자를 선택하세요.": "Please choose an installer.",
+    "주소, 우편번호, 관리번호, 집주인 이름·연락처, 메모 검색": "Search address, postcode, ref, landlord name/phone, notes",
+    "주소, 우편번호, 관리번호 검색": "Search address, postcode or ref",
+    "현장정보 {n}": "Surveys {n}",
     "휴대폰 번호": "Mobile number",
     "문자로 받은 6자리 코드로 로그인합니다. 비밀번호가 필요 없습니다.": "We'll text you a 6-digit code. No password needed.",
     "문자로 코드 받기": "Text me a code",
@@ -303,9 +339,9 @@ def translate(lang: str, text, **kwargs) -> str:
 
 def translate_message(lang: str, key: str, args: dict) -> str:
     """알림 메시지용: 인자 중 상태·역할·기록 종류 같은 용어만 번역한다(파일명, 검색어 등은 그대로)."""
-    from .constants import ENTRY_TYPES, ROLES, STATUSES
+    from .constants import ENTRY_TYPES, ROLES, STAGES, STATUSES
 
-    terms = set(STATUSES) | set(ROLES.values()) | set(ENTRY_TYPES.values())
+    terms = set(STATUSES) | set(ROLES.values()) | set(ENTRY_TYPES.values()) | set(STAGES.values())
     return translate(lang, key, **{k: translate(lang, v) if v in terms else v for k, v in args.items()})
 
 

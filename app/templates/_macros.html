@@ -2,15 +2,34 @@
 <span class="new-badge" title="{{ _('확인하지 않은 새 소식') }}">N</span>
 {%- endmacro %}
 
-{% macro status_badge(status) -%}
-<span class="badge status-{{ STATUSES.index(status) + 1 if status in STATUSES else 0 }}">{{ _(status) }}</span>
+{# 단계 표시: "6 · 1차 시공" + 보류 #}
+{% macro stage_badge(house, short=false) -%}
+<span class="stage-badge stage-{{ house.stage }}">{% if not short %}<b>{{ house.stage }}</b>{% endif %}{{ _(STAGES[house.stage]) }}</span>
+{%- if house.on_hold %} <span class="hold-badge">{{ _('보류') }}</span>{% endif %}
 {%- endmacro %}
+
+{# 9단계 진행 표시줄 #}
+{% macro stage_bar(house) %}
+<div class="stagebar{% if house.on_hold %} on-hold{% endif %}" aria-label="{{ _('{n}단계 중 {i}단계', n=9, i=house.stage) }}">
+  <div class="stagebar-head">
+    <span class="muted small">{{ _('{n}단계 중 {i}단계', n=9, i=house.stage) }}</span>
+    <b>{{ _(STAGES[house.stage]) }}</b>{% if house.on_hold %} <span class="hold-badge">{{ _('보류') }}</span>{% endif %}
+  </div>
+  <ol>
+    {% for n, name in STAGES.items() %}
+      <li class="{% if n < house.stage %}done{% elif n == house.stage %}now{% endif %}"><span>{{ n }}. {{ _(name) }}</span></li>
+    {% endfor %}
+  </ol>
+</div>
+{% endmacro %}
 
 {# 변경이력 detail → 화면 문구 (detail은 언어 중립 값으로 저장됨) #}
 {% macro audit_detail(h, entry_type=None) -%}
   {%- set et = entry_type or h.entry_type -%}
   {%- if h.action == 'status' -%}
     {% for s in h.detail.split(' → ') %}{{ _(s) }}{% if not loop.last %} → {% endif %}{% endfor %}
+  {%- elif h.action == 'stage' -%}
+    {% for s in h.detail.split(' → ') %}{{ s }}. {{ _(STAGES.get(s|int, s)) }}{% if not loop.last %} → {% endif %}{% endfor %}
   {%- elif h.action == 'house_edit' -%}
     {%- set labels = [] -%}
     {%- for k in (h.detail or '').split(',') if k -%}{%- set _ignored = labels.append(_(HOUSE_LABELS.get(k, k))) -%}{%- endfor -%}
@@ -133,8 +152,8 @@ data-upload data-direct="{{ 1 if DIRECT_UPLOAD else 0 }}" data-upload-url="/hous
           {% if h.entry_id and not entry_type %} <a class="small" href="?tab=all#entry-{{ h.entry_id }}">{{ _('기록 보기') }}</a>{% endif %}
           {% if h.snapshot %}
             {% set snap = h.snapshot|fromjson %}
-            <details class="snapshot"><summary>{{ _('사유') if h.action == 'status' else _('수정 전 내용') }}</summary>
-              {% if h.action == 'status' %}<p>{{ snap.note }}</p>
+            <details class="snapshot"><summary>{{ _('사유') if h.action in ('status', 'stage', 'hold', 'unhold') else _('수정 전 내용') }}</summary>
+              {% if h.action in ('status', 'stage', 'hold', 'unhold') %}<p>{{ snap.note }}</p>
               {% elif h.action == 'house_edit' %}
                 <dl class="facts">{% for k, val in snap.items() %}<div><dt>{{ _(HOUSE_LABELS.get(k, k)) }}</dt><dd>{{ val or '—' }}</dd></div>{% endfor %}</dl>
               {% else %}

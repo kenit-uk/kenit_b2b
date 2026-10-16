@@ -32,8 +32,9 @@ page = mgr.get("/houses").text
 assert "+ 집 등록" in page and "사용자 관리" in page and "초대하기" in page and "role-manager" in page
 r = mgr.post("/houses/new", data=dict(address="7 Manager Road", landlord_phone="+447700111222"), follow_redirects=True)
 hid = int(re.search(r"/houses/(\d+)", str(r.url)).group(1))
+assert mgr.post(f"/houses/{hid}/members", data=dict(user_id=uid("inst@ex.com"))).status_code in (200, 303)   # 매니저도 배정 가능
 assert mgr.post(f"/houses/{hid}/edit", data=dict(address="7 Manager Road", landlord_phone="+447700111222", memo="key safe")).status_code in (200, 303)
-assert "상태가 &#39;견적완료&#39;" in mgr.post(f"/houses/{hid}/status", data=dict(status="견적완료"), follow_redirects=True).text
+assert "4단계 &#39;최종 확정&#39;" in mgr.post(f"/houses/{hid}/stage", data=dict(stage="4"), follow_redirects=True).text
 mgr.post(f"/houses/{hid}/entries/quote", data=dict(amount="1000", body="매니저 견적"))
 mgr.post(f"/houses/{hid}/entries/conversation", data=dict(body="매니저 통화"))
 admin.post(f"/houses/{hid}/entries/quote", data=dict(amount="2000", body="관리자 견적"))
@@ -66,11 +67,12 @@ q_adm = db.execute("select id from entries where body = '관리자 견적'").fet
 assert st(mgr, f"/entries/{q_mgr}/edit") == 200 and st(mgr, f"/entries/{q_adm}/edit") == 403
 assert st(admin, f"/entries/{q_mgr}/edit") == 200
 
-# 설치업자: 집주인 대화 안 보임, 집 등록·상태 변경 불가
+# 설치업자: 견적·집주인 대화 안 보임, 집 등록·단계 변경·배정 불가
 page = inst.get(f"/houses/{hid}").text
-assert "매니저 견적" in page and "매니저 통화" not in page
+assert "매니저 견적" not in page and "매니저 통화" not in page and "7 Manager Road" in page
 assert inst.post("/houses/new", data=dict(address="x")).status_code == 403
-assert inst.post(f"/houses/{hid}/status", data=dict(status="보류")).status_code == 403
+assert inst.post(f"/houses/{hid}/stage", data=dict(stage="5")).status_code == 403
+assert inst.post(f"/houses/{hid}/members", data=dict(user_id=uid("inst@ex.com"))).status_code == 403
 # N: 매니저 대화 → 관리자 N, 설치업자는 안 뜸
 admin.get(f"/houses/{hid}"); inst.get(f"/houses/{hid}")
 mgr.post(f"/houses/{hid}/entries/conversation", data=dict(body="두번째 통화"))
@@ -82,7 +84,7 @@ inv = admin.get("/invites").text
 assert all(v in inv for v in codes.values()) and "매니저용" in inv and inv.count("/regenerate") == 3
 r = admin.post(f"/users/{uid('inst@ex.com')}/role", data=dict(role="manager"), follow_redirects=True)
 assert "설치업자I님의 역할을 매니저(으)로 바꿨습니다." in r.text and role("inst@ex.com") == "manager"
-assert "매니저 통화" in inst.get(f"/houses/{hid}").text
+assert "매니저 통화" in inst.get(f"/houses/{hid}").text and "매니저 견적" in inst.get(f"/houses/{hid}").text
 r = admin.post(f"/users/{uid('admin@ex.com')}/role", data=dict(role="installer"), follow_redirects=True)
 assert "본인 역할은 바꿀 수 없습니다" in r.text and role("admin@ex.com") == "staff"
 assert admin.post(f"/users/{uid('mgr@ex.com')}/role", data=dict(role="owner")).status_code == 400

@@ -1,28 +1,31 @@
 {% extends "base.html" %}
-{% block title %}{{ _('현장 목록') }} · {{ BRAND }}{% endblock %}
+{% block title %}{{ _('프로젝트') if is_office else _('내 작업') }} · {{ BRAND }}{% endblock %}
 {% block content %}
+{% import "_macros.html" as m with context %}
 <div class="page-head">
-  <h1>{{ _('현장 목록') }}</h1>
+  <h1>{{ _('프로젝트') if is_office else _('내 작업') }}</h1>
   {% if is_office %}<a class="btn primary hide-mobile" href="/houses/new">{{ _('+ 집 등록') }}</a>{% endif %}
 </div>
 
 <div class="chips">
-  <a class="chip {% if not f.status %}active{% endif %}" href="/houses">{{ _('전체') }} <b>{{ total }}</b></a>
-  {% for s in STATUSES %}
-    <a class="chip status-{{ loop.index }} {% if f.status == [s] %}active{% endif %}" href="/houses?status={{ s|urlencode }}">{{ _(s) }} <b>{{ counts.get(s, 0) }}</b></a>
+  <a class="chip {% if not f.stage and not f.hold %}active{% endif %}" href="/houses">{{ _('전체') }} <b>{{ total }}</b></a>
+  {% for n, name in STAGES.items() %}
+    <a class="chip stage-{{ n }} {% if f.stage == [n] %}active{% endif %}" href="/houses?stage={{ n }}">{{ n }}. {{ _(name) }} <b>{{ counts.get(n, 0) }}</b></a>
   {% endfor %}
+  <a class="chip chip-hold {% if f.hold %}active{% endif %}" href="/houses?hold=1">{{ _('보류') }} <b>{{ hold_count }}</b></a>
 </div>
 
 <form class="card filters" method="get" action="/houses">
   <div class="filter-main">
-    <input type="search" name="q" value="{{ f.q }}" placeholder="{{ _('주소, 우편번호, 집주인 이름·연락처, 메모 검색') if is_office else _('주소, 우편번호, 집주인 이름, 메모 검색') }}">
+    <input type="search" name="q" value="{{ f.q }}" placeholder="{{ _('주소, 우편번호, 관리번호, 집주인 이름·연락처, 메모 검색') if is_office else _('주소, 우편번호, 관리번호 검색') }}">
     <select name="sort" aria-label="{{ _('정렬') }}">
       {% for key, s in sorts.items() %}<option value="{{ key }}" {% if f.sort == key %}selected{% endif %}>{{ _(s[0]) }}</option>{% endfor %}
     </select>
     <button class="btn primary">{{ _('검색') }}</button>
   </div>
-  {# 위쪽 상태 칩으로 고른 상태를 검색할 때도 유지 #}
-  {% for s in f.status %}<input type="hidden" name="status" value="{{ s }}">{% endfor %}
+  {# 위쪽 단계 칩으로 고른 조건을 검색할 때도 유지 #}
+  {% for s in f.stage %}<input type="hidden" name="stage" value="{{ s }}">{% endfor %}
+  {% if f.hold %}<input type="hidden" name="hold" value="1">{% endif %}
   <p class="muted small">{{ _('검색 결과 {n}건', n=houses|length) if filtered else _('전체 {n}건', n=houses|length) }}</p>
 </form>
 
@@ -33,13 +36,14 @@
     <div class="house-main">
       <div class="house-addr">{% if h.unread %}<span class="new-badge" title="{{ _('확인하지 않은 새 소식') }}">N</span> {% endif %}{{ h.address }}</div>
       <div class="muted small">
-        {% if h.postcode %}<span class="postcode">{{ h.postcode }}</span>{% endif %}
-        {% if h.landlord_name %} · {{ _('집주인 {name}', name=h.landlord_name) }}{% endif %}
+        <span class="ref-no">{{ h.ref_no }}</span>
+        {% if h.postcode %} · <span class="postcode">{{ h.postcode }}</span>{% endif %}
+        {% if is_office and h.landlord_name %} · {{ _('집주인 {name}', name=h.landlord_name) }}{% endif %}
       </div>
     </div>
     <div class="house-meta">
-      <span class="badge status-{{ STATUSES.index(h.status) + 1 }}">{{ _(h.status) }}</span>
-      <span class="small muted">{{ _('현장정보 {n} · 견적 {m}', n=h.survey_count, m=h.quote_count) }}</span>
+      <span class="badges">{{ m.stage_badge(h) }}</span>
+      <span class="small muted">{% if is_office %}{{ _('현장정보 {n} · 견적 {m}', n=h.survey_count, m=h.quote_count) }}{% else %}{{ _('현장정보 {n}', n=h.survey_count) }}{% endif %}</span>
       <span class="small muted">{{ _('최근 {when}', when=h.last_activity|dt) }}</span>
     </div>
   </a>

@@ -43,6 +43,10 @@ for bad in ["('z@ex.com', 'Z', NULL, 'x', 'owner', 'now')", "('y@ex.com', 'Y', '
         raise SystemExit("constraint lost: " + bad)
     except D.IntegrityError:
         pass
+h = c.execute("SELECT ref_no, stage, on_hold FROM houses").fetchone()
+assert (h["ref_no"], h["stage"], h["on_hold"]) == ("WS-100001", 1, 0), dict(h)                       # 이전 상태 → 단계
+members = [r["user_id"] for r in c.execute("SELECT user_id FROM house_members")]
+assert members == [2], members                                                                       # 기존 설치업자 배정
 if not c.pg:
     assert c.execute("PRAGMA foreign_key_check").fetchall() == []
 print("MIGRATION OK", "(pg)" if c.pg else "(sqlite)")

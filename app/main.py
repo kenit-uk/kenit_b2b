@@ -23,7 +23,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import constants as C
 from .auth import Forbidden, LoginRequired, admin_user, current_user, hash_password, office_user, verify_password
 from .config import COOKIE_SECURE, DATABASE_URL, MAX_UPLOAD_BYTES, ON_VERCEL, SECRET_KEY
-from .db import IntegrityError, audit, connect, ensure_db, get_db, get_setting, now, set_setting
+from .db import IntegrityError, audit, connect, ensure_db, get_db, get_setting, now, ref_no_for, set_setting
 from .storage import storage
 from . import sms
 from .i18n import LANGS, detect_lang, fmt_datetime, translate, translate_message
@@ -108,6 +108,7 @@ templates.env.globals.update(
     BRAND=C.BRAND,
     COMPANY=C.COMPANY,
     STATUSES=C.STATUSES,
+    STAGES=C.STAGES,
     ROLES=C.ROLES,
     ENTRY_TYPES=C.ENTRY_TYPES,
     PROPERTY_TYPES=C.PROPERTY_TYPES,
@@ -187,6 +188,9 @@ async def _http_error(request: Request, exc: HTTPException):
 
 # ---------- 공통 조회/권한 ----------
 
+# 현장 상세의 시간순 목록에 기록과 함께 보여줄 변경이력
+TIMELINE_ACTIONS = ("status", "stage", "hold", "unhold")
+
 def readable_types(user) -> list[str]:
     return [t for t, rule in C.ENTRY_RULES.items() if user["role"] in rule["read"]]
 
@@ -202,15 +206,27 @@ def can_edit(user, entry) -> bool:
     return user["role"] in C.ADMIN_ROLES and entry["type"] in ("quote", "conversation")
 
 
+def is_office(user) -> bool:
+    return user["role"] in C.OFFICE_ROLES
+
+
+def member_condition(user, alias: str = "h") -> tuple[str, list]:
+    """설치업자는 배정된 프로젝트만 본다. 회사 직원은 전부."""
+    if is_office(user):
+        return "1 = 1", []
+    return f"EXISTS (SELECT 1 FROM house_members m WHERE m.house_id = {alias}.id AND m.user_id = ?)", [user["id"]]
+
+
 def unread_condition(user) -> tuple[str, list]:
     """현장 h 에 이 사용자가 아직 확인하지 않은 활동(본인 작업 제외, 볼 수 있는 기록만)이 있는지 판단하는 SQL."""
     types = readable_types(user)
-    sql = f"""EXISTS (
+    member_sql, member_params = member_condition(user)
+    sql = f"""{member_sql} AND EXISTS (
         SELECT 1 FROM audit_log l LEFT JOIN entries e ON e.id = l.entry_id
         WHERE l.house_id = h.id AND l.actor_id != ?
           AND l.id > COALESCE((SELECT last_seen_id FROM house_views WHERE user_id = ? AND house_id = h.id), ?)
           AND (l.entry_id IS NULL OR e.type IN ({",".join("?" * len(types))})))"""
-    return sql, [user["id"], user["id"], user["seen_baseline"], *types]
+    return sql, [*member_params, user["id"], user["id"], user["seen_baseline"], *types]
 
 
 def unread_count(conn, user) -> int:
@@ -218,7 +234,8 @@ def unread_count(conn, user) -> int:
     return conn.execute(f"SELECT COUNT(*) AS n FROM houses h WHERE {sql}", params).fetchone()["n"]
 
 
-def get_house_or_404(conn, house_id: int):
+def get_house_or_404(conn, house_id: int, user=None):
+    """프로젝트 조회. user를 주면 그 사람이 볼 수 없는 프로젝트(배정 안 된 설치업자)는 없는 것처럼 404."""
     house = conn.execute(
         """SELECT h.*, cu.name AS creator_name, uu.name AS updater_name
            FROM houses h
@@ -228,6 +245,9 @@ def get_house_or_404(conn, house_id: int):
         (house_id,),
     ).fetchone()
     if not house:
+        raise HTTPException(404)
+    if user is not None and not is_office(user) and not conn.execute(
+            "SELECT 1 FROM house_members WHERE house_id = ? AND user_id = ?", (house_id, user["id"])).fetchone():
         raise HTTPException(404)
     return house
 
@@ -243,6 +263,7 @@ def get_entry_or_404(conn, entry_id: int, user):
     ).fetchone()
     if not entry or entry["type"] not in readable_types(user):
         raise HTTPException(404)
+    get_house_or_404(conn, entry["house_id"], user)
     return entry
 
 
@@ -571,22 +592,26 @@ def house_list(request: Request, user=Depends(current_user), conn=Depends(get_db
     p = request.query_params
     f = {
         "q": p.get("q", "").strip(),
-        "status": [s for s in p.getlist("status") if s in C.STATUSES],
+        "stage": [int(x) for x in p.getlist("stage") if x.isdigit() and int(x) in C.STAGES],
+        "hold": p.get("hold") == "1",
         "sort": p.get("sort", "activity") if p.get("sort") in SORTS else "activity",
     }
 
-    where, params = ["1 = 1"], []
+    member_sql, member_params = member_condition(user)
+    where, params = [member_sql], list(member_params)
     if f["q"]:
         like = f"%{f['q']}%"
-        cols = ["h.address", "h.postcode", "h.landlord_name", "h.memo"]
-        if user["role"] in C.OFFICE_ROLES:
+        cols = ["h.address", "h.postcode", "h.ref_no", "h.landlord_name", "h.memo"]
+        if is_office(user):
             cols += ["h.landlord_phone", "h.landlord_email"]
         # 우편번호는 공백 없이 입력해도 찾을 수 있게 (예: SW1A1AA)
         where.append("(" + " OR ".join(f"{c} {conn.like} ?" for c in cols) + f" OR REPLACE(h.postcode, ' ', '') {conn.like} ?)")
         params += [like] * len(cols) + [f"%{f['q'].replace(' ', '')}%"]
-    if f["status"]:
-        where.append(f"h.status IN ({','.join('?' * len(f['status']))})")
-        params += f["status"]
+    if f["stage"]:
+        where.append(f"h.stage IN ({','.join('?' * len(f['stage']))})")
+        params += f["stage"]
+    if f["hold"]:
+        where.append("h.on_hold = 1")
 
     unread_sql, unread_params = unread_condition(user)
     sql = f"""SELECT h.*, {unread_sql} AS unread,
@@ -597,10 +622,13 @@ def house_list(request: Request, user=Depends(current_user), conn=Depends(get_db
               FROM houses h WHERE {" AND ".join(where)}
               ORDER BY {SORTS[f["sort"]][1]}, h.id DESC"""
     houses = conn.execute(sql, unread_params + params).fetchall()
-    counts = {r["status"]: r["n"] for r in conn.execute("SELECT status, COUNT(*) AS n FROM houses GROUP BY status")}
-    filtered = bool(f["q"] or f["status"])
+    counts = {r["stage"]: r["n"] for r in conn.execute(
+        f"SELECT stage, COUNT(*) AS n FROM houses h WHERE {member_sql} GROUP BY stage", member_params)}
+    hold_count = conn.execute(f"SELECT COUNT(*) AS n FROM houses h WHERE {member_sql} AND on_hold = 1",
+                              member_params).fetchone()["n"]
+    filtered = bool(f["q"] or f["stage"] or f["hold"])
     return render(request, "houses.html", user=user, houses=houses, counts=counts, total=sum(counts.values()),
-                  f=f, sorts=SORTS, filtered=filtered)
+                  hold_count=hold_count, f=f, sorts=SORTS, filtered=filtered)
 
 
 @app.get("/houses/new")
@@ -621,19 +649,20 @@ async def house_create(request: Request, user=Depends(office_user), conn=Depends
     ts = now()
     with conn:
         house_id = conn.insert(
-            f"""INSERT INTO houses ({", ".join(HOUSE_KEYS)}, status, created_by, created_at, updated_by, updated_at)
-                VALUES ({", ".join("?" * len(HOUSE_KEYS))}, ?, ?, ?, ?, ?)""",
-            (*data.values(), C.STATUSES[0], user["id"], ts, user["id"], ts),
+            f"""INSERT INTO houses ({", ".join(HOUSE_KEYS)}, status, stage, on_hold, created_by, created_at, updated_by, updated_at)
+                VALUES ({", ".join("?" * len(HOUSE_KEYS))}, '', 1, 0, ?, ?, ?, ?)""",
+            (*data.values(), user["id"], ts, user["id"], ts),
         )
+        conn.execute("UPDATE houses SET ref_no = ? WHERE id = ?", (ref_no_for(house_id), house_id))
         audit(conn, house_id=house_id, actor_id=user["id"], action="house_create", detail=data["address"])
-    flash(request, "집이 등록되었습니다. 설치업자가 현장정보를 올릴 수 있습니다.")
+    flash(request, "프로젝트를 만들었습니다. 설치업자를 배정하면 그 설치업자에게 보입니다.")
     return redirect(f"/houses/{house_id}")
 
 
 @app.get("/houses/{house_id}")
 def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
                  user=Depends(current_user), conn=Depends(get_db)):
-    house = get_house_or_404(conn, house_id)
+    house = get_house_or_404(conn, house_id, user)
     types = readable_types(user)
     marks = ",".join("?" * len(types))
 
@@ -656,12 +685,12 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
     # 정렬은 시각(초 단위)이 아니라 변경이력 번호로 해서 같은 초에 생긴 항목도 순서가 정확하다
     created_log = {h["entry_id"]: h["id"] for h in history if h["action"] == "entry_create"}
     timeline = [{"kind": "entry", "order": created_log.get(e["id"], 0), "entry": e} for e in entries]
-    timeline += [{"kind": "status", "order": h["id"], "log": h} for h in history if h["action"] == "status"]
+    timeline += [{"kind": "status", "order": h["id"], "log": h} for h in history if h["action"] in TIMELINE_ACTIONS]
     timeline.sort(key=lambda x: x["order"], reverse=True)
     if tab in C.ENTRY_TYPES:
         timeline = [t for t in timeline if t["kind"] == "entry" and t["entry"]["type"] == tab]
     elif tab == "status":
-        timeline = [t for t in timeline if t["kind"] == "status"]
+        timeline = [t for t in timeline if t["kind"] == "status"]  # 단계·상태 변경 탭
     q = q.strip()
     if q:
         needle = q.lower()
@@ -695,22 +724,29 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
 
     type_counts = {t: sum(1 for e in entries if e["type"] == t) for t in types}
     writable = [t for t in C.ENTRY_TYPES if can_write(user, t)]
+    members = conn.execute(
+        """SELECT u.id, u.name, u.phone_e164, m.added_at FROM house_members m JOIN users u ON u.id = m.user_id
+           WHERE m.house_id = ? ORDER BY u.name""", (house_id,)).fetchall()
+    candidates = conn.execute(
+        """SELECT id, name FROM users WHERE role = 'installer' AND active = 1
+           AND id NOT IN (SELECT user_id FROM house_members WHERE house_id = ?) ORDER BY name""", (house_id,)).fetchall() \
+        if is_office(user) else []
     return render(
         request, "house.html", user=user, house=house, timeline=timeline, files=files, history=history,
         tab=tab, q=q, types=types, type_counts=type_counts, writable=writable,
-        new_logs=new_logs, new_entries=new_entries,
+        new_logs=new_logs, new_entries=new_entries, members=members, candidates=candidates,
         can_edit=lambda e: can_edit(user, e),
     )
 
 
 @app.get("/houses/{house_id}/edit")
 def house_edit_page(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
-    return render(request, "house_form.html", user=user, house=get_house_or_404(conn, house_id))
+    return render(request, "house_form.html", user=user, house=get_house_or_404(conn, house_id, user))
 
 
 @app.post("/houses/{house_id}/edit")
 async def house_edit(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
-    house = get_house_or_404(conn, house_id)
+    house = get_house_or_404(conn, house_id, user)
     form = await request.form()
     data = {k: form_str(form, k) for k in HOUSE_KEYS}
     data["postcode"] = data["postcode"].upper()
@@ -731,22 +767,67 @@ async def house_edit(request: Request, house_id: int, user=Depends(office_user),
     return redirect(f"/houses/{house_id}")
 
 
-@app.post("/houses/{house_id}/status")
-async def house_status(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
-    house = get_house_or_404(conn, house_id)
+@app.post("/houses/{house_id}/stage")
+async def house_stage(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
+    """단계 이동은 회사(관리자·매니저)만 한다."""
+    house = get_house_or_404(conn, house_id, user)
     form = await request.form()
-    new_status = form_str(form, "status")
+    raw = form_str(form, "stage", 3)
     note = form_str(form, "note", 500)
-    if new_status not in C.STATUSES:
-        raise HTTPException(400, "알 수 없는 상태입니다.")
-    if new_status != house["status"]:
+    if not raw.isdigit() or int(raw) not in C.STAGES:
+        raise HTTPException(400, "알 수 없는 단계입니다.")
+    new = int(raw)
+    if new != house["stage"]:
         with conn:
-            conn.execute("UPDATE houses SET status = ?, updated_by = ?, updated_at = ? WHERE id = ?",
-                         (new_status, user["id"], now(), house_id))
-            audit(conn, house_id=house_id, actor_id=user["id"], action="status",
-                  detail=f"{house['status']} → {new_status}", snapshot={"note": note} if note else None)
-        flash(request, "상태가 '{status}'(으)로 변경되었습니다.", status=new_status)
+            conn.execute("UPDATE houses SET stage = ?, updated_by = ?, updated_at = ? WHERE id = ?",
+                         (new, user["id"], now(), house_id))
+            audit(conn, house_id=house_id, actor_id=user["id"], action="stage",
+                  detail=f"{house['stage']} → {new}", snapshot={"note": note} if note else None)
+        flash(request, "{n}단계 '{stage}'(으)로 옮겼습니다.", n=new, stage=C.STAGES[new])
     return redirect(f"/houses/{house_id}")
+
+
+@app.post("/houses/{house_id}/hold")
+async def house_hold(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
+    house = get_house_or_404(conn, house_id, user)
+    note = form_str(await request.form(), "note", 500)
+    hold = 0 if house["on_hold"] else 1
+    with conn:
+        conn.execute("UPDATE houses SET on_hold = ?, updated_by = ?, updated_at = ? WHERE id = ?",
+                     (hold, user["id"], now(), house_id))
+        audit(conn, house_id=house_id, actor_id=user["id"], action="hold" if hold else "unhold",
+              snapshot={"note": note} if note else None)
+    flash(request, "프로젝트를 보류했습니다." if hold else "보류를 해제했습니다.")
+    return redirect(f"/houses/{house_id}")
+
+
+@app.post("/houses/{house_id}/members")
+async def house_member_add(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
+    get_house_or_404(conn, house_id, user)
+    raw = form_str(await request.form(), "user_id", 12)
+    target = conn.execute("SELECT id, name FROM users WHERE id = ? AND role = 'installer' AND active = 1",
+                          (int(raw) if raw.isdigit() else 0,)).fetchone()
+    if not target:
+        raise HTTPException(400, "설치업자를 선택하세요.")
+    if not conn.execute("SELECT 1 FROM house_members WHERE house_id = ? AND user_id = ?", (house_id, target["id"])).fetchone():
+        with conn:
+            conn.execute("INSERT INTO house_members (house_id, user_id, added_by, added_at) VALUES (?, ?, ?, ?)",
+                         (house_id, target["id"], user["id"], now()))
+            audit(conn, house_id=house_id, actor_id=user["id"], action="member_add", detail=target["name"])
+        flash(request, "{name}님을 배정했습니다. 이제 이 프로젝트가 보입니다.", name=target["name"])
+    return redirect(f"/houses/{house_id}#members")
+
+
+@app.post("/houses/{house_id}/members/{member_id}/remove")
+def house_member_remove(request: Request, house_id: int, member_id: int, user=Depends(office_user), conn=Depends(get_db)):
+    get_house_or_404(conn, house_id, user)
+    target = conn.execute("SELECT name FROM users WHERE id = ?", (member_id,)).fetchone()
+    if target and conn.execute("SELECT 1 FROM house_members WHERE house_id = ? AND user_id = ?", (house_id, member_id)).fetchone():
+        with conn:
+            conn.execute("DELETE FROM house_members WHERE house_id = ? AND user_id = ?", (house_id, member_id))
+            audit(conn, house_id=house_id, actor_id=user["id"], action="member_remove", detail=target["name"])
+        flash(request, "{name}님의 배정을 해제했습니다. 작성한 기록은 그대로 남습니다.", name=target["name"])
+    return redirect(f"/houses/{house_id}#members")
 
 
 # ---------- 기록 (현장정보 / 견적 / 집주인 대화) ----------
@@ -758,7 +839,7 @@ async def entry_create(request: Request, house_id: int, entry_type: str,
         raise HTTPException(404)
     if not can_write(user, entry_type):
         raise Forbidden()
-    get_house_or_404(conn, house_id)
+    get_house_or_404(conn, house_id, user)
     form = await request.form()
     fields = entry_fields(entry_type, form)
     body = form_str(form, "body", 20000)
@@ -798,7 +879,7 @@ async def upload_urls(request: Request, house_id: int, user=Depends(current_user
     """브라우저가 저장소(R2)에 사진을 바로 올릴 수 있는 1회용 주소를 발급한다."""
     if not storage.direct:
         raise HTTPException(404)
-    get_house_or_404(conn, house_id)
+    get_house_or_404(conn, house_id, user)
     lang = detect_lang(request)
     try:
         files = (await request.json()).get("files")
@@ -828,7 +909,7 @@ def entry_edit_page(request: Request, entry_id: int, user=Depends(current_user),
 
 
 def render_entry_edit(request, conn, user, entry, error=None, status_code=200):
-    house = get_house_or_404(conn, entry["house_id"])
+    house = get_house_or_404(conn, entry["house_id"], user)
     files = attachments_by_entry(conn, [entry["id"]]).get(entry["id"], [])
     revisions = conn.execute(
         """SELECT l.*, u.name AS actor_name FROM audit_log l JOIN users u ON u.id = l.actor_id
@@ -901,6 +982,7 @@ def file_download(file_id: int, download: int = 0, user=Depends(current_user), c
     # 삭제 표시된 파일은 관리자만 열람 가능(기록 확인용)
     if not f or f["entry_type"] not in readable_types(user) or (f["deleted_at"] and user["role"] not in C.OFFICE_ROLES):
         raise HTTPException(404)
+    get_house_or_404(conn, f["house_id"], user)  # 배정되지 않은 프로젝트의 파일은 볼 수 없다
     return storage.response(f["stored_name"], f["mime"], f["original_name"], bool(download))
 
 
