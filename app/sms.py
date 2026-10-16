@@ -26,22 +26,28 @@ RESEND_AFTER = timedelta(seconds=60)
 MAX_PER_HOUR = 5
 
 
-def normalize_phone(raw: str, default_country: str = "44") -> str | None:
-    """입력한 번호를 +국가번호 형식으로. 올바르지 않으면 None."""
+def normalize_phone(raw: str) -> str | None:
+    """입력한 번호를 +국가번호 형식으로. 휴대폰 번호가 아니면 None.
+
+    국가번호 없이 쓴 번호는 영국 휴대폰(07…)만 받는다. 010-1234-5678 같은 다른 나라 번호를
+    영국 번호로 잘못 바꿔 엉뚱한 곳에 문자를 보내지 않도록, 다른 나라는 +국가번호로 입력해야 한다.
+    """
     s = re.sub(r"[\s\-().]", "", raw or "")
     if s.startswith("+"):
         digits = s[1:]
     elif s.startswith("00"):
         digits = s[2:]
-    elif s.startswith("0"):
-        digits = default_country + s[1:]
-    elif s.startswith(default_country) and len(s) > 11:
+    elif s.startswith("07"):
+        digits = "44" + s[1:]
+    elif s.startswith("447"):
         digits = s
+    elif s.startswith("7") and len(s) == 10:
+        digits = "44" + s
     else:
-        digits = default_country + s
+        return None
     if not digits.isdigit() or not 10 <= len(digits) <= 15:
         return None
-    if digits.startswith("44") and len(digits) != 12:  # 영국 번호는 국가번호 포함 12자리
+    if digits.startswith("44") and not (digits.startswith("447") and len(digits) == 12):  # 영국은 휴대폰(07…)만
         return None
     return "+" + digits
 

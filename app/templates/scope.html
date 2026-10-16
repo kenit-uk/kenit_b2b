@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% import "_scope_values.html" as v with context %}
+{% block title %}{{ _('작업 범위') }} v{{ scope.version }} · {{ house.address }}{% endblock %}
+{% block content %}
+<a class="back" href="/houses/{{ house.id }}">← {{ house.ref_no }} · {{ house.address }}</a>
+<div class="page-head">
+  <div>
+    <h1>{{ _('작업 범위') }} v{{ scope.version }}</h1>
+    <p class="muted small">{{ scope.created_at|dt }} · {{ scope.creator_name }}{% if scope.note %} · {{ _(scope.note) }}{% endif %}</p>
+  </div>
+  {% if versions|length > 1 %}
+  <div class="seg versions">{% for x in versions %}<a class="{% if x.version == scope.version %}active{% endif %}" href="/houses/{{ house.id }}/scope/{{ x.version }}">v{{ x.version }}</a>{% endfor %}</div>
+  {% endif %}
+</div>
+<p class="muted small">{{ _('작업 범위에는 가격이 들어가지 않습니다.') }}</p>
+{% for r in data.rooms %}
+<section class="card"><h2>{{ r.name }}</h2>{{ v.room_facts(r, r.acc) }}</section>
+{% endfor %}
+<section class="card"><h2>{{ _('실외기·프로젝트 공통') }}</h2>{{ v.common_facts(data.odus, data.common) }}</section>
+{% endblock %}

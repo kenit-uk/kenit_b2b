@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% import "_survey.html" as s with context %}
+{% block title %}{{ _('현장조사') }} · {{ house.address }}{% endblock %}
+{% block content %}
+{{ s.flow_head('/houses/' ~ house.id, _('현장조사') ~ ' · ' ~ house.address, _('방 {n}개', n=rooms|length)) }}
+{% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+<div class="survey-status status-{{ survey.status }}">
+  {{ _(C.SURVEY_STATUS[survey.status]) }}
+  {% if survey.submitted_at %}<span class="muted small">· {{ _('보낸 시각 {when}', when=survey.submitted_at|dt) }}</span>{% endif %}
+</div>
+
+{% for r in rooms %}
+  {% set probs = problems[r.id] %}
+  <a class="card room-row {% if probs %}has-problems{% endif %}" href="/houses/{{ house.id }}/survey/rooms/{{ r.id }}">
+    <div>
+      <div class="room-name">{{ r.name }}</div>
+      <div class="muted small">
+        {{ _(C.INDOOR_TYPES[r.indoor_type]) if r.indoor_type else _('형태 미선택') }}
+        · {{ _(C.KW_OPTIONS[r.kw]) if r.kw else _('용량 미선택') }}
+        · {{ _('사진 {n}장', n=room_media.get(r.id, [])|length) }}
+      </div>
+      {% if r.photo_request %}<div class="request-note">📷 {{ _('회사 요청') }}: {{ r.photo_request }}</div>{% endif %}
+      {% if error and probs %}<div class="problem-note">{% for p in probs %}{{ _(p) }} {% endfor %}</div>{% endif %}
+    </div>
+    <span class="room-state">{% if probs %}{{ _('할 일') }}{% else %}✓{% endif %}</span>
+  </a>
+{% endfor %}
+
+{% if can_edit %}
+<form method="post" action="/houses/{{ house.id }}/survey/rooms/new" class="row add-room">
+  <input name="name" placeholder="{{ _('방 이름 (예: 침실 2)') }}" maxlength="80">
+  <button class="btn">{{ _('+ 방 추가') }}</button>
+</form>
+{% endif %}
+
+<a class="card room-row {% if outdoor_issues %}has-problems{% endif %}" href="/houses/{{ house.id }}/survey/outdoor">
+  <div>
+    <div class="room-name">{{ _('실외기·트렁킹·전기') }}</div>
+    <div class="muted small">{{ _('실외기 {n}대', n=odus|length) }}{% if common.system %} · {{ _(C.SYSTEMS[common.system]) }}{% endif %}</div>
+    {% if error and outdoor_issues %}<div class="problem-note">{% for p in outdoor_issues %}{{ _(p) }} {% endfor %}</div>{% endif %}
+  </div>
+  <span class="room-state">{% if outdoor_issues %}{{ _('할 일') }}{% else %}✓{% endif %}</span>
+</a>
+
+<div class="sticky-actions">
+  {% if rooms %}
+  <a class="btn primary block" href="/houses/{{ house.id }}/survey/rooms/{{ rooms[0].id }}">{{ _('방 카드부터 확인하기') if survey.status == 'draft' else _('조사 내용 보기·고치기') }}</a>
+  {% endif %}
+  {% if is_office %}<a class="link-center" href="/houses/{{ house.id }}/survey">{{ _('회사 검토 화면으로') }}</a>{% endif %}
+</div>
+{% endblock %}

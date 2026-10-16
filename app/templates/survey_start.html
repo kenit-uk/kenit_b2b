@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% import "_survey.html" as s with context %}
+{% block title %}{{ _('현장조사') }} · {{ house.address }}{% endblock %}
+{% block content %}
+{{ s.flow_head('/houses/' ~ house.id, house.address, _('현장조사')) }}
+<section class="card">
+  <p>{{ _('방마다 실내기를 어디에 어떤 형태로 달지 확인하고, 마지막에 실외기·트렁킹·전기를 확인합니다.') }}</p>
+  <ol class="muted small steps-list">
+    <li>{{ _('방 카드: 사진, 실내기 형태, 대략 용량, 메모') }}</li>
+    <li>{{ _('액세서리·부가 사항') }}</li>
+    <li>{{ _('실외기·트렁킹·전기') }}</li>
+  </ol>
+  <form method="post" action="/houses/{{ house.id }}/survey/start">
+    <button class="btn primary block">{{ _('현장조사 시작') }}</button>
+  </form>
+</section>
+{% endblock %}

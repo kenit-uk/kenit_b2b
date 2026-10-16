@@ -1,0 +1,29 @@
+{# 방 하나의 조사·범위 값 표 (회사 검토, 작업 범위 화면 공통) #}
+{% macro room_facts(r, acc) -%}
+<dl class="kv">
+  <div><dt>{{ _('실내기 형태') }}</dt><dd>{{ _(C.INDOOR_TYPES[r.indoor_type]) if r.indoor_type else '—' }}</dd></div>
+  <div><dt>{{ _('대략 용량') }}</dt><dd>{{ _(C.KW_OPTIONS[r.kw]) if r.kw else '—' }}</dd></div>
+  <div><dt>{{ _('온도 컨트롤') }}</dt><dd>
+    {%- for c in acc.controls or [] %}{{ _(C.CONTROLS[c]) }}{% if c == 'lcd' and acc.lcd_colour %} ({{ _(C.LCD_COLOURS[acc.lcd_colour]) }}){% endif %}{% if not loop.last %} · {% endif %}{% else %}—{% endfor -%}
+  </dd></div>
+  <div><dt>{{ _('그릴·플레넘·점검구') }}</dt><dd>
+    {{ _(C.INCLUDE_CHOICES.get(acc.grille, '—')) }} · {{ _(C.INCLUDE_CHOICES.get(acc.plenum, '—')) }} · {{ _(C.HATCH_CHOICES.get(acc.hatch, '—')) }}
+  </dd></div>
+  {% if acc.extra %}<div><dt>{{ _('기타 부가 사항') }}</dt><dd>{{ acc.extra }}</dd></div>{% endif %}
+  {% if r.memo %}<div class="wide"><dt>{{ _('메모') }}</dt><dd>{{ r.memo }}</dd></div>{% endif %}
+</dl>
+{%- endmacro %}
+
+{% macro common_facts(odus, common) -%}
+<dl class="kv">
+  {% for o in odus %}
+  <div><dt>{{ _('실외기 {n}', n=loop.index) if odus|length > 1 else _('설치 방식') }}</dt><dd>{{ _(C.ODU_MOUNTS[o.mount]) if o.mount else '—' }}{% if o.note %} · {{ o.note }}{% endif %}</dd></div>
+  {% endfor %}
+  <div><dt>{{ _('추천 시스템') }}</dt><dd>{{ _(C.SYSTEMS[common.system]) if common.system else '—' }}</dd></div>
+  <div><dt>{{ _('배관 경로') }}</dt><dd>{% if common.pipe_ok %}<span class="tag {{ 'ok' if common.pipe_ok == 'yes' else 'warn' }}">{{ _('이상 없음') if common.pipe_ok == 'yes' else _('문제 있음') }}</span>{% else %}—{% endif %}</dd></div>
+  <div><dt>{{ _('가까운 전원') }}</dt><dd>{% if common.power_near %}<span class="tag {{ 'ok' if common.power_near == 'yes' else 'warn' }}">{{ _(C.YES_NO[common.power_near]) }}</span>{% else %}—{% endif %}</dd></div>
+  <div><dt>{{ _('접근') }}</dt><dd>{{ _(C.ACCESS[common.access]) if common.access else '—' }}</dd></div>
+  <div><dt>{{ _('트렁킹 (프로젝트 공통)') }}</dt><dd>{{ _(C.TRUNKING[common.trunking]) if common.trunking else '—' }}{% if common.trunking_colour %} · {{ common.trunking_other if common.trunking_colour == 'other' and common.trunking_other else _(C.TRUNKING_COLOURS[common.trunking_colour]) }}{% endif %}</dd></div>
+  <div><dt>{{ _('전기 작업 (실외기 → 분전반)') }}</dt><dd>{% if common.electric_work %}<span class="tag {{ 'warn' if common.electric_work == 'need' else 'ok' }}">{{ _(C.NEEDED[common.electric_work]) }}</span>{% else %}—{% endif %}</dd></div>
+</dl>
+{%- endmacro %}

@@ -10,11 +10,14 @@ for p in glob.glob("app/templates/*.html"):
     t = open(p).read()
     keys |= set(re.findall(r"_\(\s*'([^']*)'", t)) | set(re.findall(r'_\(\s*"([^"]*)"', t))
     keys |= set(re.findall(r"\('([^']*[가-힣][^']*)', ", t))
-for p in ["app/main.py", "app/sms.py"]:
+for p in ["app/main.py", "app/sms.py", "app/survey.py"]:
     src = open(p).read()
     keys |= set(re.findall(r'(?:flash\(request, |UserError\(|error=|message=|notice=|HTTPException\(\d+, |return |translate\([^,]+, )"([^"]*[가-힣][^"]*)"', src))
     keys |= set(re.findall(r'\("([^"]*[가-힣][^"]*)", "[a-z.]', src))
     keys |= set(re.findall(r'(?:if kind == "login"\s*else |translate\(lang, )"([^"]*[가-힣][^"]*)"', src))
+for d in (C.INDOOR_TYPES, C.KW_OPTIONS, C.CONTROLS, C.LCD_COLOURS, C.INCLUDE_CHOICES, C.HATCH_CHOICES, C.ODU_MOUNTS,
+          C.SYSTEMS, C.YES_NO, C.NEEDED, C.TRUNKING, C.TRUNKING_COLOURS, C.ACCESS, C.SURVEY_STATUS, C.STAGES):
+    keys |= set(d.values())
 keys |= set(C.STATUSES) | set(C.ROLES.values()) | set(C.ENTRY_TYPES.values()) | set(C.AUDIT_ACTIONS.values()) \
      | set(C.HOUSE_LABELS.values()) | set(C.CONVERSATION_CHANNELS) | {p for p in C.PROPERTY_TYPES if hangul.search(p)}
 missing = sorted(k for k in keys if hangul.search(k) and k not in EN)

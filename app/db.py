@@ -125,6 +125,79 @@ CREATE TABLE IF NOT EXISTS house_members (
   PRIMARY KEY (house_id, user_id)
 );
 
+-- 현장조사: 프로젝트마다 하나 (방 카드 + 실외기·공통)
+CREATE TABLE IF NOT EXISTS surveys (
+  id           {pk},
+  house_id     INTEGER NOT NULL REFERENCES houses(id),
+  status       TEXT NOT NULL DEFAULT 'draft',   -- draft / submitted / reviewed
+  defaults     TEXT NOT NULL DEFAULT '{{}}',    -- 모든 방에 적용한 액세서리 값 (프로젝트 기본값)
+  common       TEXT NOT NULL DEFAULT '{{}}',    -- 실외기·트렁킹·전기 등 프로젝트 공통 답변
+  created_by   INTEGER NOT NULL REFERENCES users(id),
+  created_at   TEXT NOT NULL,
+  updated_by   INTEGER REFERENCES users(id),
+  updated_at   TEXT NOT NULL,
+  submitted_by INTEGER REFERENCES users(id),
+  submitted_at TEXT,
+  reviewed_by  INTEGER REFERENCES users(id),
+  reviewed_at  TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_surveys_house ON surveys(house_id);
+
+CREATE TABLE IF NOT EXISTS survey_rooms (
+  id            {pk},
+  survey_id     INTEGER NOT NULL REFERENCES surveys(id),
+  sort          INTEGER NOT NULL DEFAULT 0,
+  name          TEXT NOT NULL,
+  indoor_type   TEXT,            -- wall / cassette / ducted / console
+  kw            TEXT,            -- 2.5 / 3.5 / 5.0 / 7.0 / unknown (대략적인 제안)
+  memo          TEXT,
+  acc           TEXT NOT NULL DEFAULT '{{}}',  -- 이 방에서 기본값을 덮어쓴 액세서리 값
+  photo_request TEXT,            -- 회사가 요청한 추가 사진
+  removed_at    TEXT,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS survey_odus (
+  id         {pk},
+  survey_id  INTEGER NOT NULL REFERENCES surveys(id),
+  sort       INTEGER NOT NULL DEFAULT 0,
+  mount      TEXT,               -- ground / bracket / roof
+  note       TEXT,
+  removed_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+-- 작업 범위(Scope) 버전. 가격은 넣지 않는다.
+CREATE TABLE IF NOT EXISTS scope_versions (
+  id         {pk},
+  house_id   INTEGER NOT NULL REFERENCES houses(id),
+  version    INTEGER NOT NULL,
+  data       TEXT NOT NULL,      -- JSON: rooms(방별 기기·용량·액세서리), odus(실외기), common(공통 사항)
+  note       TEXT,
+  survey_id  INTEGER REFERENCES surveys(id),
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_scope_version ON scope_versions(house_id, version);
+
+-- v1 사진·파일 (방 사진, 실외기 사진, 분전반 사진 등). owner_type + owner_id 로 어디에 붙은 파일인지 나타낸다.
+CREATE TABLE IF NOT EXISTS media (
+  id            {pk},
+  house_id      INTEGER NOT NULL REFERENCES houses(id),
+  owner_type    TEXT NOT NULL,
+  owner_id      INTEGER NOT NULL,
+  stored_name   TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  mime          TEXT NOT NULL,
+  size          INTEGER NOT NULL,
+  uploaded_by   INTEGER NOT NULL REFERENCES users(id),
+  created_at    TEXT NOT NULL,
+  deleted_by    INTEGER REFERENCES users(id),
+  deleted_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_media_owner ON media(owner_type, owner_id);
+
 -- 사용자별로 각 현장의 변경이력을 어디까지 확인했는지 (N 표시용)
 CREATE TABLE IF NOT EXISTS house_views (
   user_id      INTEGER NOT NULL REFERENCES users(id),

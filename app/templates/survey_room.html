@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "_survey.html" as s with context %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ room.name }} · {{ _('현장조사') }}{% endblock %}
+{% block content %}
+{% set ids = rooms|map(attribute='id')|list %}
+{% set idx = ids.index(room.id) %}
+{{ s.flow_head('/houses/' ~ house.id ~ '/survey', _('현장조사') ~ ' · ' ~ house.address,
+               _('방 {n}개 중 {i}번째', n=rooms|length, i=idx + 1), steps=rooms|length * 2 + 1, current=idx * 2) }}
+<p class="flow-hint">{{ _('방마다: 실내기 → 액세서리 · 마지막에 실외기') }}</p>
+
+{% if room.photo_request %}<div class="flash flash-warn">📷 {{ _('회사 요청') }}: {{ room.photo_request }}</div>{% endif %}
+
+<form method="post" action="/houses/{{ house.id }}/survey/rooms/{{ room.id }}" enctype="multipart/form-data" class="survey-form" {{ m.upload_attrs(house.id) }}>
+  <div class="room-title">
+    <input class="room-name-input" name="name" value="{{ room.name }}" maxlength="80" aria-label="{{ _('방 이름') }}" {% if not can_edit %}disabled{% endif %}>
+    {% if can_edit %}<button type="button" class="btn small rename-btn" onclick="const i=this.previousElementSibling; i.focus(); i.select();">{{ _('이름 바꾸기') }}</button>{% endif %}
+  </div>
+
+  <h3>{{ _('실내기를 어디에 설치하나요?') }}</h3>
+  {{ s.media_grid(room_media.get(room.id, []), removable=can_edit) }}
+  {% if can_edit %}{{ s.photo_input() }}{% endif %}
+
+  <h3>{{ _('실내기 형태') }}</h3>
+  {{ s.indoor_types(room.indoor_type) }}
+
+  <h3>{{ _('대략 용량') }}</h3>
+  {{ s.choices('kw', C.KW_OPTIONS, room.kw, 'pills') }}
+  <p class="muted small">{{ _('대략적인 제안이면 됩니다. 최종 모델은 회사가 정합니다.') }}</p>
+
+  <h3>{{ _('메모할 내용') }} <span class="muted">({{ _('선택') }})</span></h3>
+  <textarea name="memo" rows="3" placeholder="{{ _('예: 문 위쪽이 가장 좋음, 뒤쪽이 외벽') }}">{{ room.memo or '' }}</textarea>
+  <p class="muted small">🎤 {{ _('휴대폰 키보드의 마이크 버튼을 누르면 말로 입력할 수 있습니다.') }}</p>
+
+  {% if can_edit %}
+  <div class="sticky-actions">
+    <button class="btn primary block" name="action" value="next">{{ _('다음: 액세서리') }}</button>
+    <button class="link-center" name="action" value="later">{{ _('저장하고 나중에 마치기') }}</button>
+  </div>
+  {% endif %}
+</form>
+
+{% if can_edit %}
+<div class="room-tools">
+  <form method="post" action="/houses/{{ house.id }}/survey/rooms/new"><input type="hidden" name="copy_of" value="{{ room.id }}">
+    <button class="btn small">{{ _('이 방에 실내기 한 대 더') }}</button></form>
+  {% if rooms|length > 1 %}
+  <form method="post" action="/houses/{{ house.id }}/survey/rooms/{{ room.id }}/remove"
+        data-confirm="{{ _('이 방 카드를 뺄까요?') }}" onsubmit="return confirm(this.dataset.confirm)">
+    <button class="btn small danger">{{ _('방 카드 빼기') }}</button></form>
+  {% endif %}
+</div>
+{% endif %}
+<script src="/static/upload.js"></script>
+{% endblock %}

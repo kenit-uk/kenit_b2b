@@ -25,7 +25,7 @@
       </form>
     {% else %}
       <form method="post" action="/me/phone" class="row">
-        <input type="tel" name="phone" value="{{ phone_input or '' }}" placeholder="07700 900123" inputmode="tel" autocomplete="tel" required>
+        <input type="tel" name="phone" value="{{ phone_input or '' }}" placeholder="07700 900123" title="{{ _('영국 휴대폰은 07…, 다른 나라는 +국가번호 (예: +82 10 1234 5678)') }}" inputmode="tel" autocomplete="tel" required>
         <button class="btn">{{ _('번호 바꾸기') if user.phone_e164 else _('번호 등록') }}</button>
       </form>
     {% endif %}

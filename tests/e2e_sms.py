@@ -32,6 +32,10 @@ assert sms.normalize_phone("447700900555") == "+447700900555"
 assert sms.normalize_phone("(07700) 900-555") == "+447700900555"
 assert sms.normalize_phone("+82 10 1234 5678") == "+821012345678"
 assert sms.normalize_phone("12345") is None and sms.normalize_phone("0770090055") is None
+assert sms.normalize_phone("010-9977-3841") is None                 # 한국 번호를 영국 번호로 잘못 바꾸지 않음
+assert sms.normalize_phone("+82 10 9977 3841") == "+821099773841"
+assert sms.normalize_phone("01632 960123") is None and sms.normalize_phone("+44 1632 960123") is None   # 영국 일반전화
+assert sms.normalize_phone("7700900555") == "+447700900555"
 assert sms.format_phone("+447700900555") == "+44 7700 900555"
 
 admin = ko(); admin.get("/lang/ko")

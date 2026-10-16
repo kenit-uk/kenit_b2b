@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% import "_survey.html" as s with context %}
+{% import "_scope_values.html" as v with context %}
+{% block title %}{{ _('현장조사') }} — {{ house.address }}{% endblock %}
+{% block content %}
+<a class="back" href="/houses/{{ house.id }}">← {{ house.ref_no }} · {{ house.address }}</a>
+<div class="page-head review-head">
+  <div>
+    <h1>{{ _('현장조사') }} — {{ house.address }}</h1>
+    <p class="muted small">
+      <span class="survey-status status-{{ survey.status }}">{{ _(C.SURVEY_STATUS[survey.status]) }}</span>
+      {% if survey.submitted_at %} · {{ _('제출 {when}', when=survey.submitted_at|dt) }}{% endif %}
+      · {{ _('방 {r}개 · 사진 {p}장', r=rooms|length, p=(room_media.values()|map('length')|sum) + (odu_media.values()|map('length')|sum) + board_media|length) }}
+    </p>
+  </div>
+  <div class="row wrap">
+    <a class="btn" href="/houses/{{ house.id }}/survey?edit=1">{{ _('조사 내용 직접 고치기') }}</a>
+    <form method="post" action="/houses/{{ house.id }}/scope/from-survey"
+          {% if scopes %}data-confirm="{{ _('이미 작업 범위가 있습니다. 이 조사로 새 버전을 만들까요?') }}" onsubmit="return confirm(this.dataset.confirm)"{% endif %}>
+      <button class="btn primary">{{ _('이 조사로 작업 범위 v{n} 만들기', n=(scopes|length) + 1) }}</button>
+    </form>
+  </div>
+</div>
+{% if survey.status == 'draft' %}<div class="flash flash-warn">{{ _('설치업자가 아직 회사로 보내지 않은 조사입니다. 작성 중인 내용이 보입니다.') }}</div>{% endif %}
+
+<div class="review-grid">
+  <div>
+    {% for r in rooms %}
+    {% set acc = accs[r.id] %}
+    <article class="card review-room" id="room-{{ r.id }}">
+      <div class="q-head">
+        <h2>{{ r.name }}</h2>
+        <span class="row">
+          {% if problems[r.id] %}<span class="tag warn">{{ _('빠진 항목') }}</span>
+          {% elif r.kw == 'unknown' %}<span class="tag warn">{{ _('용량 미정') }}</span>
+          {% else %}<span class="tag ok">{{ _('이상 없음') }}</span>{% endif %}
+        </span>
+      </div>
+      <div class="review-room-body">
+        <div>{{ s.media_grid(room_media.get(r.id, [])) }}{% if not room_media.get(r.id) %}<p class="muted small">{{ _('사진 없음') }}</p>{% endif %}</div>
+        {{ v.room_facts(r, acc) }}
+      </div>
+      <form method="post" action="/houses/{{ house.id }}/survey/rooms/{{ r.id }}/photo-request" class="row request-form">
+        <input name="text" value="{{ r.photo_request or '' }}" placeholder="{{ _('추가 사진 요청 (예: 창문 쪽 벽 전체가 보이게)') }}" maxlength="500">
+        <button class="btn small">{{ _('추가 사진 요청') }}</button>
+      </form>
+    </article>
+    {% endfor %}
+  </div>
+  <aside>
+    <section class="card">
+      <h2>{{ _('실외기·프로젝트 공통') }}</h2>
+      {% for o in odus %}{{ s.media_grid(odu_media.get(o.id, [])) }}{% endfor %}
+      {{ v.common_facts(odus, common) }}
+      {% if board_media %}<h3>{{ _('분전반 사진') }}</h3>{{ s.media_grid(board_media) }}{% endif %}
+    </section>
+    {% if common.memo %}
+    <section class="card"><h2>{{ _('설치업자 메모') }}</h2><p class="body">{{ common.memo }}</p></section>
+    {% endif %}
+    <section class="card">
+      <h2>{{ _('다음 할 일') }}</h2>
+      <ol class="muted small steps-list">
+        <li>{{ _('용량이 빠지거나 미정인 방은 추가 사진·확인을 요청합니다.') }}</li>
+        <li>{{ _('LATS로 설계한 뒤 작업 범위 v1을 만들고, 최종 모델·용량으로 고칩니다.') }}</li>
+        <li>{{ _('견적서는 앱 밖에서 보내고, 견적 금액은 견적 기록에 남깁니다(설치업자에게 안 보임).') }}</li>
+      </ol>
+      {% if scopes %}
+      <p class="small">{{ _('작업 범위') }}: {% for sc in scopes %}<a href="/houses/{{ house.id }}/scope/{{ sc.version }}">v{{ sc.version }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+      {% endif %}
+    </section>
+  </aside>
+</div>
+{% endblock %}

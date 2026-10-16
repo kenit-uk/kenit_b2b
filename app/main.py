@@ -330,7 +330,8 @@ async def collect_direct_uploads(conn, raw: str, house_id: int) -> list[dict]:
         m = re.fullmatch(rf"{house_id}/[0-9a-f]{{32}}(\.[a-z0-9]+)", key)
         if not m:
             raise UserError("업로드 정보가 올바르지 않습니다. 다시 시도하세요.")
-        if conn.execute("SELECT 1 FROM attachments WHERE stored_name = ?", (key,)).fetchone():
+        if conn.execute("SELECT 1 FROM attachments WHERE stored_name = ? UNION SELECT 1 FROM media WHERE stored_name = ?",
+                        (key, key)).fetchone():
             raise UserError("업로드 정보가 올바르지 않습니다. 다시 시도하세요.")
         info = await run_in_threadpool(storage.head, key)
         if not info:
@@ -429,7 +430,7 @@ async def login_phone(request: Request, conn=Depends(get_db)):
     next_url = safe_next(form_str(form, "next") or "/houses")
     phone = sms.normalize_phone(raw)
     if not phone:
-        return render(request, "login.html", next=next_url, phone=raw, error="휴대폰 번호를 확인하세요.", status_code=400)
+        return render(request, "login.html", next=next_url, phone=raw, error="휴대폰 번호를 확인하세요. 영국 휴대폰은 07…, 다른 나라는 +국가번호로 입력하세요 (예: +82 10 1234 5678).", status_code=400)
     user = conn.execute("SELECT id, active FROM users WHERE phone_e164 = ?", (phone,)).fetchone()
     # 등록되지 않았거나 비활성화된 번호에는 문자를 보내지 않는다(비용·악용 방지). 화면은 같게 보여준다.
     if user and user["active"]:
@@ -489,7 +490,7 @@ async def me_phone(request: Request, user=Depends(current_user), conn=Depends(ge
     raw = form_str(await request.form(), "phone", 40)
     phone = sms.normalize_phone(raw)
     if not phone:
-        return render(request, "me.html", user=user, phone_input=raw, error="휴대폰 번호를 확인하세요.", status_code=400)
+        return render(request, "me.html", user=user, phone_input=raw, error="휴대폰 번호를 확인하세요. 영국 휴대폰은 07…, 다른 나라는 +국가번호로 입력하세요 (예: +82 10 1234 5678).", status_code=400)
     other = conn.execute("SELECT id FROM users WHERE phone_e164 = ? AND id != ?", (phone, user["id"])).fetchone()
     if other:
         return render(request, "me.html", user=user, phone_input=raw, error="이미 다른 계정에 등록된 번호입니다.", status_code=400)
@@ -735,6 +736,14 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
         request, "house.html", user=user, house=house, timeline=timeline, files=files, history=history,
         tab=tab, q=q, types=types, type_counts=type_counts, writable=writable,
         new_logs=new_logs, new_entries=new_entries, members=members, candidates=candidates,
+        survey=conn.execute(
+            """SELECT s.*, (SELECT COUNT(*) FROM survey_rooms r WHERE r.survey_id = s.id AND r.removed_at IS NULL) AS room_count,
+                      (SELECT COUNT(*) FROM survey_rooms r WHERE r.survey_id = s.id AND r.removed_at IS NULL
+                       AND r.photo_request IS NOT NULL) AS photo_requests
+               FROM surveys s WHERE s.house_id = ?""", (house_id,)).fetchone(),
+        scopes=conn.execute("SELECT version, created_at FROM scope_versions WHERE house_id = ? ORDER BY version DESC",
+                            (house_id,)).fetchall(),
+        SURVEY_STATUS=C.SURVEY_STATUS,
         can_edit=lambda e: can_edit(user, e),
     )
 
@@ -1015,7 +1024,7 @@ async def invite_by_phone(request: Request, user=Depends(office_user), conn=Depe
         raise Forbidden()
     phone = sms.normalize_phone(data["phone"])
     if not data["name"] or not phone:
-        return render_invites(request, conn, user, data, "이름과 휴대폰 번호를 확인하세요.", 400)
+        return render_invites(request, conn, user, data, "이름과 휴대폰 번호를 확인하세요. 영국 휴대폰은 07…, 다른 나라는 +국가번호로 입력하세요 (예: +82 10 1234 5678).", 400)
     if conn.execute("SELECT 1 FROM users WHERE phone_e164 = ?", (phone,)).fetchone():
         return render_invites(request, conn, user, data, "이미 등록된 번호입니다.", 400)
     with conn:
@@ -1079,3 +1088,10 @@ def invite_regenerate(request: Request, role: str, user=Depends(admin_user), con
         set_setting(conn, f"invite_code_{role}", secrets.token_urlsafe(9))
     flash(request, "{role} 초대코드를 새로 발급했습니다. 이전 코드로는 더 이상 가입할 수 없습니다.", role=C.ROLES[role])
     return redirect("/invites")
+
+
+# ---------- v1 화면 (별도 파일) ----------
+# 맨 아래에서 불러온다: 이 파일의 공통 함수(render, flash …)를 가져다 쓰기 때문
+from .survey import router as survey_router  # noqa: E402
+
+app.include_router(survey_router)

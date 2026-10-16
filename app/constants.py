@@ -50,6 +50,11 @@ AUDIT_ACTIONS = {
     "unhold": "보류 해제",
     "member_add": "설치업자 배정",
     "member_remove": "설치업자 배정 해제",
+    "survey_start": "현장조사 시작",
+    "survey_submit": "현장조사 제출",
+    "survey_photo_request": "추가 사진 요청",
+    "survey_reviewed": "현장조사 검토 완료",
+    "scope_create": "작업 범위 버전 생성",
     "entry_create": "기록 작성",
     "entry_edit": "기록 수정",
     "attachment_add": "첨부 추가",
@@ -66,3 +71,26 @@ HOUSE_LABELS = {
 }
 
 TIMEZONE = "Europe/London"
+
+# ---------- 현장조사 (시안 p.6~8) ----------
+INDOOR_TYPES = {"wall": "벽걸이", "cassette": "카세트", "ducted": "덕트", "console": "콘솔"}
+KW_OPTIONS = {"2.5": "2.5 kW", "3.5": "3.5 kW", "5.0": "5.0 kW", "7.0": "7.0 kW", "unknown": "모르겠음"}
+CONTROLS = {"app": "앱 (Wi-Fi)", "remote": "리모컨", "lcd": "벽부착 LCD"}
+LCD_COLOURS = {"white": "화이트", "black": "블랙"}
+INCLUDE_CHOICES = {"incl": "포함", "excl": "미포함", "na": "해당 없음"}
+HATCH_CHOICES = {"need": "필요", "noneed": "불필요", "na": "해당 없음"}
+# 실내기 형태별 기본값: None = 반드시 물어봄 (시안 p.7 개발자 메모)
+ACC_DEFAULTS = {
+    "wall": {"grille": "na", "plenum": "na", "hatch": "na"},
+    "cassette": {"grille": None, "plenum": "na", "hatch": "na"},
+    "ducted": {"grille": None, "plenum": None, "hatch": None},
+    "console": {"grille": "na", "plenum": "na", "hatch": "na"},
+}
+ODU_MOUNTS = {"ground": "지면", "bracket": "벽 브래킷", "roof": "지붕"}
+SYSTEMS = {"single": "싱글 스플릿", "multi": "멀티 스플릿", "multiv": "Multi V", "unknown": "모르겠음"}
+YES_NO = {"yes": "예", "no": "아니요"}
+NEEDED = {"need": "필요", "noneed": "불필요"}
+TRUNKING = {"incl": "포함", "excl": "미포함"}
+TRUNKING_COLOURS = {"white": "화이트", "black": "블랙", "other": "기타"}
+ACCESS = {"ladder": "사다리", "scaffold": "비계", "none": "필요 없음"}
+SURVEY_STATUS = {"draft": "작성 중", "submitted": "회사 검토 대기", "reviewed": "검토 완료"}

@@ -47,6 +47,34 @@
   {% endif %}
 </section>
 
+<div class="work-cards">
+<section class="card work-card" id="survey">
+  <div class="q-head"><h2>{{ _('현장조사') }}</h2>
+    {% if survey %}<span class="survey-status status-{{ survey.status }}">{{ _(SURVEY_STATUS[survey.status]) }}</span>{% endif %}</div>
+  {% if survey %}
+    <p class="muted small">{{ _('방 {n}개', n=survey.room_count) }}{% if survey.submitted_at %} · {{ _('보낸 시각 {when}', when=survey.submitted_at|dt) }}{% endif %}</p>
+    {% if survey.photo_requests %}<p class="request-note">📷 {{ _('회사가 추가 사진을 요청했습니다 ({n}곳)', n=survey.photo_requests) }}</p>{% endif %}
+    {% if is_office %}
+      <a class="btn {% if survey.status == 'submitted' %}primary{% endif %}" href="/houses/{{ house.id }}/survey">{{ _('현장조사 검토') }}</a>
+    {% else %}
+      <a class="btn {% if survey.status == 'draft' or survey.photo_requests %}primary{% endif %}" href="/houses/{{ house.id }}/survey">
+        {{ _('현장조사 계속하기') if survey.status == 'draft' else _('조사 내용 보기·고치기') }}</a>
+    {% endif %}
+  {% else %}
+    <p class="muted small">{{ _('아직 시작하지 않았습니다.') }}</p>
+    <a class="btn {% if not is_office %}primary{% endif %}" href="/houses/{{ house.id }}/survey">{{ _('현장조사 시작') }}</a>
+  {% endif %}
+</section>
+<section class="card work-card" id="scope">
+  <h2>{{ _('작업 범위') }}</h2>
+  {% if scopes %}
+    <ul class="version-list">{% for sc in scopes %}<li><a href="/houses/{{ house.id }}/scope/{{ sc.version }}">v{{ sc.version }}</a> <span class="muted small">{{ sc.created_at|dt }}</span>{% if loop.first %} <span class="tag ok">{{ _('최신') }}</span>{% endif %}</li>{% endfor %}</ul>
+  {% else %}
+    <p class="muted small">{{ _('현장조사를 검토한 뒤 회사가 만듭니다.') }}</p>
+  {% endif %}
+</section>
+</div>
+
 <section class="card" id="members">
   <h2>{{ _('배정된 설치업자') }}</h2>
   {% if members %}

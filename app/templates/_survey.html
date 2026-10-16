@@ -1,0 +1,87 @@
+{# 현장조사 화면 공통 조각 #}
+
+{# 큰 선택 버튼 (하나만): 라디오 버튼을 버튼처럼 보이게 #}
+{% macro choices(name, options, value, cls='') -%}
+<div class="choices {{ cls }}">
+  {% for key, label in options.items() %}
+    <label class="choice"><input type="radio" name="{{ name }}" value="{{ key }}" {% if value == key %}checked{% endif %}><span>{{ _(label) }}</span></label>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{# 여러 개 선택 #}
+{% macro checks(name, options, values, cls='') -%}
+<div class="choices {{ cls }}">
+  {% for key, label in options.items() %}
+    <label class="choice"><input type="checkbox" name="{{ name }}" value="{{ key }}" {% if key in values %}checked{% endif %}><span>{{ _(label) }}</span></label>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{# 실내기 형태 4종 (아이콘 버튼) #}
+{% macro indoor_types(value) -%}
+<div class="choices icons">
+  {% for key, label in C.INDOOR_TYPES.items() %}
+  <label class="choice tile"><input type="radio" name="indoor_type" value="{{ key }}" {% if value == key %}checked{% endif %}>
+    <span>
+      <svg viewBox="0 0 32 24" aria-hidden="true">
+        {% if key == 'wall' %}<rect x="3" y="6" width="26" height="9" rx="3"/><path d="M8 12h16"/>
+        {% elif key == 'cassette' %}<rect x="6" y="2" width="20" height="20" rx="2"/><rect x="11" y="7" width="10" height="10" rx="1"/>
+        {% elif key == 'ducted' %}<path d="M3 7h26"/><rect x="5" y="9" width="22" height="5" rx="1"/><path d="M8 18h1M12 18h1M16 18h1M20 18h1M24 18h1"/>
+        {% else %}<rect x="7" y="3" width="18" height="18" rx="3"/><path d="M11 9h10M11 13h10"/>{% endif %}
+      </svg>
+      {{ _(label) }}
+    </span>
+  </label>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{# 사진 목록 #}
+{% macro media_grid(items, removable=false) -%}
+  {% if items %}
+  <div class="photo-grid">
+    {% for p in items %}
+      <div class="photo">
+        {% if p.mime.startswith('image/') and p.mime not in ('image/heic', 'image/heif') %}
+          <a href="/media/{{ p.id }}" target="_blank"><img src="/media/{{ p.id }}" alt="{{ p.original_name }}" loading="lazy"></a>
+        {% elif p.mime.startswith('video/') %}
+          <video src="/media/{{ p.id }}" controls preload="metadata"></video>
+        {% else %}
+          <a class="file-tile" href="/media/{{ p.id }}" target="_blank">📄<span>{{ p.mime.split('/')[1]|upper }}</span></a>
+        {% endif %}
+        {% if removable %}<label class="photo-remove"><input type="checkbox" name="remove_media" value="{{ p.id }}"> {{ _('삭제') }}</label>{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+{%- endmacro %}
+
+{# 사진 추가 칸: 휴대폰에서는 바로 카메라가 열린다 #}
+{% macro photo_input(label='사진 추가') -%}
+  <label class="photo-add">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+    <span class="photo-add-label" data-picked="{{ _('사진 {n}장 선택됨 — 저장하면 올라갑니다') }}">{{ _(label) }}</span>
+    <input type="file" name="files" multiple accept="image/*,video/mp4,video/quicktime" onchange="
+      const l = this.parentElement, t = l.querySelector('.photo-add-label');
+      l.classList.toggle('has-files', this.files.length > 0);
+      t.textContent = this.files.length ? t.dataset.picked.replace('{n}', this.files.length) : {{ _(label)|tojson|forceescape }};"
+           data-compressing="{{ _('사진 압축 중…') }}" data-uploading="{{ _('업로드 중 {i}/{n}') }}"
+           data-saving="{{ _('저장 중…') }}" data-failed="{{ _('업로드에 실패했습니다. 인터넷 연결을 확인하고 다시 시도하세요.') }}">
+  </label>
+  <input type="hidden" name="uploaded" value="">
+{%- endmacro %}
+
+{# 위쪽: 뒤로가기 + 제목 + 단계 표시줄 #}
+{% macro flow_head(back, sub, title, steps=None, current=None) -%}
+<header class="flow-head">
+  <a class="back-btn" href="{{ back }}" aria-label="{{ _('뒤로') }}">‹</a>
+  <div>
+    <div class="flow-sub">{{ sub }}</div>
+    <h1>{{ title }}</h1>
+  </div>
+</header>
+{% if steps %}
+<div class="flow-steps">{% for i in range(steps) %}<span class="{% if i < current %}done{% elif i == current %}now{% endif %}"></span>{% endfor %}</div>
+{% endif %}
+{%- endmacro %}

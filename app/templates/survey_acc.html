@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "_survey.html" as s with context %}
+{% block title %}{{ room.name }} · {{ _('액세서리·부가 사항') }}{% endblock %}
+{% block content %}
+{% set ids = rooms|map(attribute='id')|list %}
+{% set idx = ids.index(room.id) %}
+{% set acc = accs[room.id] %}
+{% set tdef = C.ACC_DEFAULTS.get(room.indoor_type or 'wall', {}) %}
+{{ s.flow_head('/houses/' ~ house.id ~ '/survey/rooms/' ~ room.id,
+               room.name ~ ' · ' ~ (_(C.INDOOR_TYPES[room.indoor_type]) if room.indoor_type else _('형태 미선택')) ~ (' · ' ~ _(C.KW_OPTIONS[room.kw]) if room.kw else ''),
+               _('액세서리·부가 사항'), steps=rooms|length * 2 + 1, current=idx * 2 + 1) }}
+
+<form method="post" action="/houses/{{ house.id }}/survey/rooms/{{ room.id }}/acc" class="survey-form acc-form">
+  {% if rooms|length > 1 and can_edit %}
+  <div class="apply-all">
+    <span><b>{{ _('모든 방이 같나요?') }}</b> {{ _('한 번 입력하고 다른 방만 바꾸세요.') }}</span>
+    <button class="btn small primary" name="action" value="apply_all">{{ _('모든 방에 적용') }}</button>
+  </div>
+  {% endif %}
+
+  <div class="card q-card">
+    <div class="q-head"><h3>{{ _('온도 컨트롤 방식') }}</h3><span class="muted small">{{ _('복수 선택 가능') }}</span></div>
+    {{ s.checks('controls', C.CONTROLS, acc.controls or []) }}
+
+    <div class="lcd-colour">
+      <h3>{{ _('벽부착 LCD 색상') }}</h3>
+      {{ s.choices('lcd_colour', C.LCD_COLOURS, acc.lcd_colour) }}
+    </div>
+
+    {% for key, label, opts in (('grille', '그릴 (Grille)', C.INCLUDE_CHOICES), ('plenum', '플레넘 (Plenum)', C.INCLUDE_CHOICES), ('hatch', '점검구 (Access hatch)', C.HATCH_CHOICES)) %}
+    <div class="q-head"><h3>{{ _(label) }}</h3>
+      {% if tdef.get(key) == 'na' %}<span class="muted small">{{ _('{type}: 보통 필요 없음', type=_(C.INDOOR_TYPES[room.indoor_type or 'wall'])) }}</span>
+      {% elif tdef.get(key) is none %}<span class="must small">{{ _('꼭 확인') }}</span>{% endif %}
+    </div>
+    {{ s.choices(key, opts, acc[key]) }}
+    {% endfor %}
+
+    <p class="muted small">{{ _('트렁킹은 방마다 묻지 않고, 실외기 화면에서 프로젝트 전체로 한 번만 확인합니다.') }}</p>
+
+    <h3>{{ _('기타 부가 사항') }}</h3>
+    <textarea name="extra" rows="2" placeholder="{{ _('예: 콘센트 추가 필요') }}">{{ acc.extra or '' }}</textarea>
+  </div>
+
+  {% if can_edit %}
+  <div class="sticky-actions">
+    <button class="btn primary block" name="action" value="next">{{ _('다음 방') if idx + 1 < rooms|length else _('다음: 실외기·전기') }}</button>
+    <p class="muted small center">{{ _('회색 표시는 실내기 형태별 기본값입니다.') }}</p>
+  </div>
+  {% endif %}
+</form>
+<script>
+  // LCD를 고른 경우에만 색상 질문을 보여준다
+  (function () {
+    const f = document.querySelector('.acc-form'), box = f.querySelector('.lcd-colour');
+    const sync = () => box.classList.toggle('hidden', !f.querySelector('input[name=controls][value=lcd]').checked);
+    f.addEventListener('change', sync); sync();
+  })();
+</script>
+{% endblock %}

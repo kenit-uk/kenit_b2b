@@ -75,6 +75,13 @@
     form.addEventListener('submit', async ev => {
       if (!input || !input.files.length) { setBusy(msg.saving || label); return; }
       ev.preventDefault();
+      // form.submit()은 누른 버튼의 값(예: action=next)을 보내지 않으므로 숨은 칸으로 옮겨 둔다
+      const sub = ev.submitter;
+      if (sub && sub.name) {
+        let h = form.querySelector('input[type=hidden][data-submitter]');
+        if (!h) { h = document.createElement('input'); h.type = 'hidden'; h.dataset.submitter = '1'; form.appendChild(h); }
+        h.name = sub.name; h.value = sub.value;
+      }
       try {
         setBusy(msg.compressing);
         const files = [];
