@@ -29,8 +29,8 @@ MAX_PER_HOUR = 5
 def normalize_phone(raw: str) -> str | None:
     """입력한 번호를 +국가번호 형식으로. 휴대폰 번호가 아니면 None.
 
-    국가번호 없이 쓴 번호는 영국 휴대폰(07…)만 받는다. 010-1234-5678 같은 다른 나라 번호를
-    영국 번호로 잘못 바꿔 엉뚱한 곳에 문자를 보내지 않도록, 다른 나라는 +국가번호로 입력해야 한다.
+    국가번호 없이 쓴 번호는 영국 휴대폰(07…)과 한국 휴대폰(010…)만 받는다. 영국 번호는 010으로 시작하지
+    않으므로 둘이 헷갈리지 않는다. 그 밖의 나라는 +국가번호로 입력해야 한다(엉뚱한 나라로 문자가 가지 않도록).
     """
     s = re.sub(r"[\s\-().]", "", raw or "")
     if s.startswith("+"):
@@ -39,6 +39,10 @@ def normalize_phone(raw: str) -> str | None:
         digits = s[2:]
     elif s.startswith("07"):
         digits = "44" + s[1:]
+    elif s.startswith("010") and len(s) == 11:        # 한국 휴대폰 010-1234-5678
+        digits = "82" + s[1:]
+    elif s.startswith("8210") and len(s) == 12:       # 82 10 1234 5678 (+ 없이)
+        digits = s
     elif s.startswith("447"):
         digits = s
     elif s.startswith("7") and len(s) == 10:
@@ -58,6 +62,8 @@ def format_phone(e164: str | None) -> str:
         return ""
     if e164.startswith("+44") and len(e164) == 13:
         return f"+44 {e164[3:7]} {e164[7:]}"
+    if e164.startswith("+8210") and len(e164) == 13:
+        return f"+82 {e164[3:5]} {e164[5:9]} {e164[9:]}"
     return e164
 
 

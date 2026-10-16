@@ -430,7 +430,7 @@ async def login_phone(request: Request, conn=Depends(get_db)):
     next_url = safe_next(form_str(form, "next") or "/houses")
     phone = sms.normalize_phone(raw)
     if not phone:
-        return render(request, "login.html", next=next_url, phone=raw, error="휴대폰 번호를 확인하세요. 영국 휴대폰은 07…, 다른 나라는 +국가번호로 입력하세요 (예: +82 10 1234 5678).", status_code=400)
+        return render(request, "login.html", next=next_url, phone=raw, error="휴대폰 번호를 확인하세요. 영국 휴대폰은 07…, 한국 휴대폰은 010…, 다른 나라는 +국가번호로 입력하세요.", status_code=400)
     user = conn.execute("SELECT id, active FROM users WHERE phone_e164 = ?", (phone,)).fetchone()
     # 등록되지 않았거나 비활성화된 번호에는 문자를 보내지 않는다(비용·악용 방지). 화면은 같게 보여준다.
     if user and user["active"]:
@@ -490,7 +490,7 @@ async def me_phone(request: Request, user=Depends(current_user), conn=Depends(ge
     raw = form_str(await request.form(), "phone", 40)
     phone = sms.normalize_phone(raw)
     if not phone:
-        return render(request, "me.html", user=user, phone_input=raw, error="휴대폰 번호를 확인하세요. 영국 휴대폰은 07…, 다른 나라는 +국가번호로 입력하세요 (예: +82 10 1234 5678).", status_code=400)
+        return render(request, "me.html", user=user, phone_input=raw, error="휴대폰 번호를 확인하세요. 영국 휴대폰은 07…, 한국 휴대폰은 010…, 다른 나라는 +국가번호로 입력하세요.", status_code=400)
     other = conn.execute("SELECT id FROM users WHERE phone_e164 = ? AND id != ?", (phone, user["id"])).fetchone()
     if other:
         return render(request, "me.html", user=user, phone_input=raw, error="이미 다른 계정에 등록된 번호입니다.", status_code=400)
@@ -1024,7 +1024,7 @@ async def invite_by_phone(request: Request, user=Depends(office_user), conn=Depe
         raise Forbidden()
     phone = sms.normalize_phone(data["phone"])
     if not data["name"] or not phone:
-        return render_invites(request, conn, user, data, "이름과 휴대폰 번호를 확인하세요. 영국 휴대폰은 07…, 다른 나라는 +국가번호로 입력하세요 (예: +82 10 1234 5678).", 400)
+        return render_invites(request, conn, user, data, "이름과 휴대폰 번호를 확인하세요. 영국 휴대폰은 07…, 한국 휴대폰은 010…, 다른 나라는 +국가번호로 입력하세요.", 400)
     if conn.execute("SELECT 1 FROM users WHERE phone_e164 = ?", (phone,)).fetchone():
         return render_invites(request, conn, user, data, "이미 등록된 번호입니다.", 400)
     with conn:

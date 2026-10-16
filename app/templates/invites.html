@@ -10,7 +10,7 @@
   <form method="post" action="/invites/phone" class="stack">
     <div class="grid-3">
       <label>{{ _('이름') }} <input name="name" value="{{ form.name or '' }}" required></label>
-      <label>{{ _('휴대폰 번호') }} <input type="tel" name="phone" value="{{ form.phone or '' }}" placeholder="07700 900123" title="{{ _('영국 휴대폰은 07…, 다른 나라는 +국가번호 (예: +82 10 1234 5678)') }}" inputmode="tel" required></label>
+      <label>{{ _('휴대폰 번호') }} <input type="tel" name="phone" value="{{ form.phone or '' }}" placeholder="07700 900123" title="{{ _('영국 휴대폰은 07…, 한국 휴대폰은 010…, 다른 나라는 +국가번호') }}" inputmode="tel" required></label>
       <label>{{ _('역할') }}
         <select name="role">
           {% for r in roles %}<option value="{{ r }}" {% if form.role == r %}selected{% endif %}>{{ _(ROLES[r]) }}</option>{% endfor %}
