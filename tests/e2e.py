@@ -147,8 +147,9 @@ inst.post("/login", data=dict(email="i@ex.com", password="pass1234"))
 ok(inst.get("/lang/en?next=/houses"))
 assert db.execute("select lang from users where id=?", (iid,)).fetchone()[0] == "en"
 r = ok(inst.get(f"/houses/{hid}"))
-for s_ in ["Site survey", "Scope agreed", "Stage 4 of 9", "Floor area", "90 ㎡", "Terraced", "Save Site survey", "1 edit(s)", "History", "Assigned installers"]:
+for s_ in ["Site survey", "Scope agreed", "Stage 4 of 9", "Floor area", "90 ㎡", "Terraced", "1 edit(s)", "History", "Assigned installers"]:
     assert s_ in r.text, s_
+assert "Save Site survey" not in r.text            # 예전 기록 입력란은 설치업자에게 숨김 (구조화된 현장조사를 씀)
 r = ok(inst.get(f"/houses/{hid}?tab=history"))
 for s_ in ["Stage changed", "1. Survey booking → 4. Scope agreed", "Record edited", "File removed", "Changed: Landlord phone", "Before edit", "On hold", "Resume"]:
     assert s_ in r.text, s_

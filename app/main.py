@@ -6,7 +6,7 @@ import secrets
 import tempfile
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -419,14 +419,41 @@ async def login(request: Request, conn=Depends(get_db)):
     email = form_str(form, "email").lower()
     password = form.get("password") or ""
     next_url = safe_next(form_str(form, "next") or "/")
+    ip = client_ip(request)
+    if login_blocked(conn, email, ip):
+        return render(request, "login.html", next=next_url, email=email,
+                      error="로그인 시도가 너무 많습니다. 15분 뒤에 다시 시도하세요.", status_code=429)
     user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-    if not user or not verify_password(password, user["password_hash"]):
+    ok = bool(user) and verify_password(password, user["password_hash"])
+    with conn:
+        conn.execute("INSERT INTO login_attempts (email, ip, ok, at) VALUES (?, ?, ?, ?)", (email[:200], ip, 1 if ok else 0, now()))
+    if not ok:
         return render(request, "login.html", next=next_url, email=email,
                       error="이메일 또는 비밀번호가 맞지 않습니다.", status_code=400)
     if not user["active"]:
         return render(request, "login.html", next=next_url, email=email,
                       error="비활성화된 계정입니다. 관리자에게 문의하세요.", status_code=403)
     return start_session(request, user, next_url)
+
+
+LOGIN_WINDOW = 15            # 분
+MAX_FAILS_PER_EMAIL = 5
+MAX_FAILS_PER_IP = 20
+
+
+def client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")   # Vercel 등 프록시 뒤에서는 첫 번째 값이 실제 접속 주소
+    return (fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else ""))[:64]
+
+
+def login_blocked(conn, email: str, ip: str) -> bool:
+    """15분 안에 같은 이메일로 5번, 같은 접속 주소에서 20번 틀리면 잠시 막는다 (비밀번호 대입 공격 방지)."""
+    since = (datetime.now(timezone.utc) - timedelta(minutes=LOGIN_WINDOW)).isoformat(timespec="seconds")
+    by_email = conn.execute("SELECT COUNT(*) AS n FROM login_attempts WHERE email = ? AND ok = 0 AND at >= ?",
+                            (email[:200], since)).fetchone()["n"]
+    by_ip = conn.execute("SELECT COUNT(*) AS n FROM login_attempts WHERE ip = ? AND ok = 0 AND at >= ?",
+                         (ip, since)).fetchone()["n"] if ip else 0
+    return by_email >= MAX_FAILS_PER_EMAIL or by_ip >= MAX_FAILS_PER_IP
 
 
 def start_session(request: Request, user, next_url: str = "/"):
@@ -745,7 +772,8 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
         )
 
     type_counts = {t: sum(1 for e in entries if e["type"] == t) for t in types}
-    writable = [t for t in C.ENTRY_TYPES if can_write(user, t)]
+    # 설치업자는 이제 구조화된 현장조사를 쓰므로, 예전 '기록' 입력란은 회사에만 보여준다(이미 쓴 기록은 그대로 보임)
+    writable = [t for t in C.ENTRY_TYPES if can_write(user, t)] if is_office(user) else []
     members = conn.execute(
         """SELECT u.id, u.name, u.phone_e164, m.added_at FROM house_members m JOIN users u ON u.id = m.user_id
            WHERE m.house_id = ? ORDER BY u.name""", (house_id,)).fetchall()
@@ -776,6 +804,8 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
         variation_counts={r["status"]: r["n"] for r in conn.execute(
             "SELECT status, COUNT(*) AS n FROM variations WHERE house_id = ? GROUP BY status", (house_id,))},
         VISIT_KINDS=C.VISIT_KINDS, VISIT_STATUS=C.VISIT_STATUS, VARIATION_STATUS=C.VARIATION_STATUS,
+        all_installers=conn.execute("SELECT id, name FROM users WHERE role = 'installer' AND active = 1 ORDER BY name").fetchall()
+        if is_office(user) else [],
         SURVEY_STATUS=C.SURVEY_STATUS, C_REQUIRED=C.REQUIRED_DOCS,
         can_edit=lambda e: can_edit(user, e),
     )
@@ -1038,6 +1068,7 @@ def users_page(request: Request, user=Depends(office_user), conn=Depends(get_db)
         """SELECT m.user_id, COUNT(*) AS n FROM house_members m JOIN houses h ON h.id = m.house_id
            WHERE h.stage < 9 GROUP BY m.user_id""")}
     return render(request, "users.html", user=user, users=users, manageable=C.MANAGEABLE[user["role"]],
+                  reset_link=request.session.pop("reset_link", None),
                   projects=projects, fgas={u["id"]: fgas_state(u["fgas_expiry"]) for u in users})
 
 
@@ -1135,6 +1166,7 @@ from .scope import router as scope_router  # noqa: E402
 from .documents import router as documents_router  # noqa: E402
 from .visits import router as visits_router  # noqa: E402
 from .approvals import router as approvals_router  # noqa: E402
+from .account import router as account_router  # noqa: E402
 
-for _r in (survey_router, scope_router, documents_router, visits_router, approvals_router):
+for _r in (survey_router, scope_router, documents_router, visits_router, approvals_router, account_router):
     app.include_router(_r)

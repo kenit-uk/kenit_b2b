@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ _('비밀번호 찾기') }} · {{ BRAND }}{% endblock %}
+{% block main_class %}auth{% endblock %}
+{% block content %}
+<div class="card auth-card">
+  <h1>{{ _('비밀번호 찾기') }}</h1>
+  {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+  {% if step == 'email' %}
+    <p class="muted">{{ _('가입한 이메일을 입력하세요. 등록된 휴대폰으로 확인 코드를 보냅니다.') }}</p>
+    <form method="post" action="/forgot" class="stack">
+      <label>{{ _('이메일') }} <input type="email" name="email" required autofocus autocomplete="username"></label>
+      <button class="btn primary">{{ _('문자로 코드 받기') }}</button>
+    </form>
+  {% else %}
+    <p class="muted">{{ _('등록된 휴대폰이 있으면 6자리 코드를 보냈습니다. 코드와 새 비밀번호를 입력하세요.') }}</p>
+    <form method="post" action="/forgot/verify" class="stack">
+      <input class="code-input" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="••••••" required aria-label="{{ _('6자리 코드') }}">
+      <label>{{ _('새 비밀번호 (8자 이상)') }} <input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+      <label>{{ _('비밀번호 확인') }} <input type="password" name="password2" minlength="8" required autocomplete="new-password"></label>
+      <button class="btn primary">{{ _('비밀번호 바꾸기') }}</button>
+    </form>
+  {% endif %}
+  <p class="muted small">{{ _('휴대폰이 등록되어 있지 않거나 문자가 오지 않으면, 관리자에게 비밀번호 재설정 링크를 요청하세요.') }}</p>
+  <p class="small"><a href="/login">← {{ _('로그인') }}</a></p>
+</div>
+{% endblock %}

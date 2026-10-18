@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ _('비밀번호 정하기') }} · {{ BRAND }}{% endblock %}
+{% block main_class %}auth{% endblock %}
+{% block content %}
+<div class="card auth-card">
+  <h1>{{ _('비밀번호 정하기') }}</h1>
+  {% if not valid %}
+    <div class="flash flash-error">{{ _('이 링크는 이미 썼거나 기간(24시간)이 지났습니다. 관리자에게 새 링크를 요청하세요.') }}</div>
+  {% else %}
+    <p class="muted">{{ _('{name}님의 새 비밀번호를 정하세요.', name=person) }}</p>
+    {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+    <form method="post" action="/reset/{{ token }}" class="stack">
+      <label>{{ _('새 비밀번호 (8자 이상)') }} <input type="password" name="password" minlength="8" required autofocus autocomplete="new-password"></label>
+      <label>{{ _('비밀번호 확인') }} <input type="password" name="password2" minlength="8" required autocomplete="new-password"></label>
+      <button class="btn primary">{{ _('저장') }}</button>
+    </form>
+  {% endif %}
+  <p class="small"><a href="/login">← {{ _('로그인') }}</a></p>
+</div>
+{% endblock %}

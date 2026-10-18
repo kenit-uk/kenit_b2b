@@ -54,6 +54,7 @@ AUDIT_ACTIONS = {
     "survey_submit": "현장조사 제출",
     "survey_photo_request": "추가 사진 요청",
     "survey_reviewed": "현장조사 검토 완료",
+    "survey_reopen": "현장조사 다시 열기",
     "scope_create": "작업 범위 버전 생성",
     "scope_ack": "작업 범위 확인",
     "scope_comment": "작업 범위 의견",

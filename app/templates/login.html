@@ -32,6 +32,7 @@
     <label>{{ _('이메일') }} <input type="email" name="email" value="{{ email or '' }}" required {% if use_email %}autofocus{% endif %} autocomplete="username"></label>
     <label>{{ _('비밀번호') }} <input type="password" name="password" required autocomplete="current-password"></label>
     <button class="btn primary">{{ _('로그인') }}</button>
+    <a class="small" href="/forgot">{{ _('비밀번호를 잊으셨나요?') }}</a>
   </form>
   <p class="muted small">{{ _('계정이 없나요?') }} <a href="/signup">{{ _('초대코드로 가입') }}</a></p>
 </div>

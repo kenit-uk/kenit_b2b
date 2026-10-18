@@ -44,7 +44,7 @@
     {% for p in items %}
       <div class="photo">
         {% if p.mime.startswith('image/') and p.mime not in ('image/heic', 'image/heif') %}
-          <a href="/media/{{ p.id }}" target="_blank"><img src="/media/{{ p.id }}" alt="{{ p.original_name }}" loading="lazy"></a>
+          <a href="/media/{{ p.id }}" target="_blank"><img src="/media/{{ p.id }}?thumb=1" alt="{{ p.original_name }}" loading="lazy"></a>
         {% elif p.mime.startswith('video/') %}
           <video src="/media/{{ p.id }}" controls preload="metadata"></video>
         {% else %}

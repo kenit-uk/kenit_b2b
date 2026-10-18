@@ -107,6 +107,23 @@
       <form method="post" action="/visits/{{ v.id }}/cancel" data-confirm="{{ _('이 방문을 취소할까요?') }}" onsubmit="return confirm(this.dataset.confirm)"><button class="btn small">{{ _('취소') }}</button></form>
       {% endif %}
     </span>
+    {% if is_office and v.status not in ('done', 'cancelled') %}
+    <details class="reschedule"><summary class="small link-text">{{ _('일정 변경') }}</summary>
+      <form method="post" action="/visits/{{ v.id }}/reschedule" class="stack">
+        <div class="grid-3">
+          <label>{{ _('날짜') }}<input type="date" name="date" value="{{ v.date or '' }}" required></label>
+          <label>{{ _('시작') }}<input type="time" name="start_time" value="{{ v.start_time or '08:00' }}"></label>
+          <label>{{ _('끝') }}<input type="time" name="end_time" value="{{ v.end_time or '16:00' }}"></label>
+        </div>
+        <div class="grid-2">
+          <label>{{ _('설치업자') }}<select name="installer_id">{% for u in all_installers %}<option value="{{ u.id }}" {% if u.id == v.installer_id %}selected{% endif %}>{{ u.name }}</option>{% endfor %}</select></label>
+          <label>{{ _('방식') }}<select name="mode"><option value="confirmed">{{ _('확정으로 예약') }}</option><option value="proposed" {% if v.status == 'proposed' %}selected{% endif %}>{{ _('설치업자에게 가능 여부 묻기') }}</option></select></label>
+        </div>
+        <input name="override_reason" maxlength="500" placeholder="{{ _('경고가 떠도 진행하는 사유 (필요할 때만)') }}">
+        <button class="btn small primary">{{ _('일정 저장') }}</button>
+      </form>
+    </details>
+    {% endif %}
   </div>
   {% else %}<p class="muted small">{{ _('예약된 방문이 없습니다.') }}</p>{% endfor %}
 </section>

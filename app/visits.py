@@ -217,6 +217,52 @@ async def visit_confirm_option(request: Request, visit_id: int, user=Depends(off
     return redirect(f"/calendar?week={d.isoformat()}")
 
 
+@router.post("/visits/{visit_id}/reschedule")
+async def visit_reschedule(request: Request, visit_id: int, user=Depends(office_user), conn=Depends(get_db)):
+    """날짜·시간·설치업자 바꾸기. 예약할 때와 같은 경고를 확인한다(막는 경고는 넘길 수 없음, 나머지는 사유를 적으면 진행)."""
+    v = visit_or_404(conn, visit_id, user)
+    form = await request.form()
+    back = f"/houses/{v['house_id']}#visits"
+    if v["status"] in ("done", "cancelled"):
+        flash(request, "끝났거나 취소된 방문은 바꿀 수 없습니다.", "error")
+        return redirect(back)
+    raw_inst = form_str(form, "installer_id", 12)
+    installer = conn.execute("SELECT * FROM users WHERE id = ? AND role = 'installer' AND active = 1",
+                             (int(raw_inst) if raw_inst.isdigit() else (v["installer_id"] or 0),)).fetchone()
+    d = parse_date(form_str(form, "date", 10))
+    start, end = parse_time(form_str(form, "start_time", 5)), parse_time(form_str(form, "end_time", 5))
+    mode = form_str(form, "mode", 20)
+    if not installer or not d:
+        flash(request, "날짜와 설치업자를 고르세요.", "error")
+        return redirect(back)
+    if start and end and end <= start:
+        flash(request, "끝나는 시간이 시작 시간보다 늦어야 합니다.", "error")
+        return redirect(back)
+    override = form_str(form, "override_reason", 500)
+    warnings = booking_warnings(conn, installer, d, start, end, v["kind"], v["house_id"], ignore_visit=visit_id)
+    if any(w["level"] == "block" for w in warnings) or (warnings and not override):
+        for w in warnings:
+            flash(request, w["key"], "error", **w.get("args", {}))
+        if not any(w["level"] == "block" for w in warnings):
+            flash(request, "그래도 바꾸려면 사유를 적고 다시 저장하세요. 기록에 남습니다.", "error")
+        return redirect(back)
+    status = "proposed" if mode == "proposed" else "confirmed"
+    ts = now()
+    with conn:
+        conn.execute("""UPDATE visits SET installer_id = ?, date = ?, start_time = ?, end_time = ?, status = ?,
+                        override_reason = COALESCE(?, override_reason), updated_at = ? WHERE id = ?""",
+                     (installer["id"], d.isoformat(), start, end, status, override or None, ts, visit_id))
+        if not conn.execute("SELECT 1 FROM house_members WHERE house_id = ? AND user_id = ?", (v["house_id"], installer["id"])).fetchone():
+            conn.execute("INSERT INTO house_members (house_id, user_id, added_by, added_at) VALUES (?, ?, ?, ?)",
+                         (v["house_id"], installer["id"], user["id"], ts))
+            audit(conn, house_id=v["house_id"], actor_id=user["id"], action="member_add", detail=installer["name"])
+        audit(conn, house_id=v["house_id"], actor_id=user["id"], action="visit_update",
+              detail=json.dumps({"from": v["date"], "date": d.isoformat(), "installer": installer["name"], "status": status,
+                                 "override": override or None}, ensure_ascii=False))
+    flash(request, "일정을 바꿨습니다." if status == "confirmed" else "일정을 바꾸고 {name}님에게 가능 여부를 물었습니다.", name=installer["name"])
+    return redirect(back)
+
+
 @router.post("/visits/{visit_id}/cancel")
 def visit_cancel(request: Request, visit_id: int, user=Depends(office_user), conn=Depends(get_db)):
     v = visit_or_404(conn, visit_id, user)

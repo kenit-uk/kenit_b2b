@@ -688,3 +688,8 @@ label.day.is-today span { outline: 2px solid var(--navy); outline-offset: -2px; 
 @media (max-width: 860px) {
   .cal-grid, .approval-grid, .work-cards.two { grid-template-columns: 1fr; }
 }
+
+.reschedule { width: 100%; }
+.reschedule form { margin-top: 8px; padding: 10px; border-radius: 10px; background: #f7f9fb; }
+.reset-box { border: 2px solid var(--orange); }
+.reset-box .invite-link { margin: 6px 0 8px; }

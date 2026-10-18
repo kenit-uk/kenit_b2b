@@ -37,6 +37,12 @@ class LocalStorage:
     def discard(self, key: str) -> None:
         self._path(key).unlink(missing_ok=True)
 
+    def exists(self, key: str) -> bool:
+        return self._path(key).exists()
+
+    def read(self, key: str) -> bytes:
+        return self._path(key).read_bytes()
+
     def response(self, key: str, mime: str, filename: str, download: bool):
         path = self._path(key)
         if not path.exists():
@@ -80,6 +86,12 @@ class S3Storage:
     def discard(self, key: str) -> None:
         self.client.delete_object(Bucket=self.bucket, Key=UPLOAD_PREFIX + key)
 
+    def exists(self, key: str) -> bool:
+        return self.head(key) is not None
+
+    def read(self, key: str) -> bytes:
+        return self.client.get_object(Bucket=self.bucket, Key=UPLOAD_PREFIX + key)["Body"].read()
+
     def presign_put(self, key: str, mime: str) -> str:
         return self.client.generate_presigned_url(
             "put_object", Params={"Bucket": self.bucket, "Key": UPLOAD_PREFIX + key, "ContentType": mime},
@@ -108,3 +120,36 @@ class S3Storage:
 
 
 storage = S3Storage() if S3_BUCKET else LocalStorage()
+
+
+# ---------- 미리보기(썸네일) ----------
+THUMB_MIMES = ("image/jpeg", "image/png", "image/webp", "image/gif")
+THUMB_SIZE = 480
+
+
+def thumb_key(key: str) -> str:
+    return key + ".thumb.jpg"
+
+
+def ensure_thumb(key: str) -> str | None:
+    """목록용 작은 사진(긴 변 480px)을 처음 볼 때 만들어 저장해 두고 그 키를 돌려준다. 만들 수 없으면 None(원본을 쓴다)."""
+    tk = thumb_key(key)
+    try:
+        if storage.exists(tk):
+            return tk
+        import io
+        from PIL import Image, ImageOps
+
+        with Image.open(io.BytesIO(storage.read(key))) as im:
+            im = ImageOps.exif_transpose(im)
+            im.thumbnail((THUMB_SIZE, THUMB_SIZE))
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            out = io.BytesIO()
+            im.save(out, "JPEG", quality=75, optimize=True)
+        out.seek(0)
+        storage.put(tk, out, "image/jpeg")
+        return tk
+    except Exception as e:  # 깨진 파일·지원 안 되는 형식 등
+        print(f"[thumb] {key}: {e}")
+        return None

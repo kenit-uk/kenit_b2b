@@ -13,8 +13,11 @@ from . import constants as C
 from .auth import Forbidden, current_user, office_user
 from .db import audit, get_db, now
 from .i18n import detect_lang, translate
+from starlette.concurrency import run_in_threadpool
+
 from .main import (UserError, collect_direct_uploads, flash, form_str, get_house_or_404, is_office, redirect,
                    remove_files, render, save_uploads, storage)
+from .storage import THUMB_MIMES, ensure_thumb
 
 router = APIRouter()
 
@@ -466,6 +469,32 @@ async def photo_request(request: Request, house_id: int, room_id: int, user=Depe
     return redirect(f"/houses/{house_id}/survey#room-{room_id}")
 
 
+@router.post("/houses/{house_id}/survey/reviewed")
+def survey_reviewed(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
+    """작업 범위를 만들지 않고 '검토 완료'만 표시 (승인 대기에서 빠진다). 설치업자는 더 이상 고칠 수 없다."""
+    get_house_or_404(conn, house_id, user)
+    survey = survey_or_404(conn, house_id)
+    if survey["status"] != "reviewed":
+        with conn:
+            conn.execute("UPDATE surveys SET status = 'reviewed', reviewed_by = ?, reviewed_at = ? WHERE id = ?",
+                         (user["id"], now(), survey["id"]))
+            audit(conn, house_id=house_id, actor_id=user["id"], action="survey_reviewed")
+        flash(request, "현장조사를 검토 완료로 표시했습니다.")
+    return redirect(f"/houses/{house_id}/survey")
+
+
+@router.post("/houses/{house_id}/survey/reopen")
+def survey_reopen(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
+    """검토 완료를 되돌려 설치업자가 다시 고칠 수 있게 한다 (예: 추가 사진을 받아야 할 때)."""
+    get_house_or_404(conn, house_id, user)
+    survey = survey_or_404(conn, house_id)
+    with conn:
+        conn.execute("UPDATE surveys SET status = 'draft', reviewed_by = NULL, reviewed_at = NULL WHERE id = ?", (survey["id"],))
+        audit(conn, house_id=house_id, actor_id=user["id"], action="survey_reopen")
+    flash(request, "설치업자가 다시 고칠 수 있게 열었습니다.")
+    return redirect(f"/houses/{house_id}/survey")
+
+
 @router.post("/houses/{house_id}/scope/from-survey")
 def scope_from_survey(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
     """현장조사 값을 그대로 복사해 작업 범위 새 버전을 만든다. 최종 모델·용량은 회사가 LATS로 정한 뒤 고친다."""
@@ -499,9 +528,13 @@ def scope_from_survey(request: Request, house_id: int, user=Depends(office_user)
 # ---------- 사진 보기 ----------
 
 @router.get("/media/{media_id}")
-def media_file(media_id: int, download: int = 0, user=Depends(current_user), conn=Depends(get_db)):
+async def media_file(media_id: int, download: int = 0, thumb: int = 0, user=Depends(current_user), conn=Depends(get_db)):
     m = conn.execute("SELECT * FROM media WHERE id = ?", (media_id,)).fetchone()
     if not m or (m["deleted_at"] and not is_office(user)):
         raise HTTPException(404)
     get_house_or_404(conn, m["house_id"], user)
+    if thumb and not download and m["mime"] in THUMB_MIMES:   # 목록에는 작은 사진
+        tk = await run_in_threadpool(ensure_thumb, m["stored_name"])
+        if tk:
+            return storage.response(tk, "image/jpeg", "thumb.jpg", False)
     return storage.response(m["stored_name"], m["mime"], m["original_name"], bool(download))

@@ -53,6 +53,28 @@ CREATE TABLE IF NOT EXISTS phone_codes (
 );
 CREATE INDEX IF NOT EXISTS idx_phone_codes_phone ON phone_codes(phone);
 
+-- 로그인 시도 (반복 시도 제한용)
+CREATE TABLE IF NOT EXISTS login_attempts (
+  id    {pk},
+  email TEXT,
+  ip    TEXT,
+  ok    INTEGER NOT NULL,
+  at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_email ON login_attempts(email, at);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip, at);
+
+-- 관리자·매니저가 만든 1회용 비밀번호 재설정 링크 (24시간)
+CREATE TABLE IF NOT EXISTS password_resets (
+  id         {pk},
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  token_hash TEXT NOT NULL UNIQUE,
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at    TEXT
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL

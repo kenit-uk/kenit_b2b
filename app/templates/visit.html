@@ -64,7 +64,7 @@
   <div class="photo-grid">
     {% for p in photos %}
     <div class="photo">
-      <a href="/media/{{ p.id }}" target="_blank"><img src="/media/{{ p.id }}" alt="" loading="lazy"></a>
+      <a href="/media/{{ p.id }}" target="_blank"><img src="/media/{{ p.id }}?thumb=1" alt="" loading="lazy"></a>
       {% if mine and visit.status != 'done' %}
       <select name="tag_{{ p.id }}" class="photo-tag-select" onchange="this.form.submit()">
         <option value="">{{ _('방 지정 안 됨') }}</option>

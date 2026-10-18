@@ -15,6 +15,11 @@
   </div>
   <div class="row wrap">
     <a class="btn" href="/houses/{{ house.id }}/survey?edit=1">{{ _('조사 내용 직접 고치기') }}</a>
+    {% if survey.status == 'reviewed' %}
+    <form method="post" action="/houses/{{ house.id }}/survey/reopen"><button class="btn">{{ _('설치업자가 다시 고치게 열기') }}</button></form>
+    {% else %}
+    <form method="post" action="/houses/{{ house.id }}/survey/reviewed"><button class="btn">{{ _('검토만 완료') }}</button></form>
+    {% endif %}
     <form method="post" action="/houses/{{ house.id }}/scope/from-survey"
           {% if scopes %}data-confirm="{{ _('이미 작업 범위가 있습니다. 이 조사로 새 버전을 만들까요?') }}" onsubmit="return confirm(this.dataset.confirm)"{% endif %}>
       <button class="btn primary">{{ _('이 조사로 작업 범위 v{n} 만들기', n=(scopes|length) + 1) }}</button>

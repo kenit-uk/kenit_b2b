@@ -11,7 +11,7 @@ for p in glob.glob("app/templates/*.html"):
     keys |= set(re.findall(r"_\(\s*'([^']*)'", t)) | set(re.findall(r'_\(\s*"([^"]*)"', t))
     keys |= set(re.findall(r"\('([^']*[가-힣][^']*)', ", t))
 import os
-for p in ["app/main.py", "app/sms.py", "app/survey.py", "app/scope.py", "app/documents.py", "app/visits.py", "app/approvals.py"]:
+for p in ["app/main.py", "app/sms.py", "app/survey.py", "app/scope.py", "app/documents.py", "app/visits.py", "app/approvals.py", "app/account.py"]:
     if not os.path.exists(p):
         continue
     src = open(p).read()
