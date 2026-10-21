@@ -140,10 +140,9 @@ def render(request: Request, name: str, user=None, status_code: int = 200, **ctx
         ctx["message"] = _(ctx["message"])
     here = request.url.path + (f"?{request.url.query}" if request.url.query else "")
     if user is not None and user["role"] in C.OFFICE_ROLES and "pending_total" not in ctx:
-        from .approvals import pending_count
         db = getattr(request.state, "db", None)
         if db is not None:
-            ctx["pending_total"] = pending_count(db)
+            ctx.update(office_nav_counts(db))
     if user is not None and "unread_total" not in ctx:
         db = getattr(request.state, "db", None)
         if db is not None:
@@ -161,6 +160,28 @@ def render(request: Request, name: str, user=None, status_code: int = 200, **ctx
          "is_office": bool(user) and user["role"] in C.OFFICE_ROLES, **ctx},
         status_code=status_code,
     )
+
+
+def office_nav_counts(conn) -> dict:
+    """회사 왼쪽 메뉴 오른쪽에 붙는 숫자·경고 (시안 p.22): 프로젝트 수, 승인 대기, F-Gas 경고, 이번 주 중복 배정."""
+    from .approvals import fgas_state, pending_count
+    from .visits import BOOKED, overlaps, today
+
+    start = today() - timedelta(days=today().weekday())
+    rows = conn.execute(
+        f"""SELECT installer_id, date, start_time, end_time FROM visits WHERE date >= ? AND date <= ?
+            AND status IN ({",".join("?" * len(BOOKED))})""",
+        (start.isoformat(), (start + timedelta(days=6)).isoformat(), *BOOKED)).fetchall()
+    groups: dict = {}
+    for r in rows:
+        groups.setdefault((r["installer_id"], r["date"]), []).append(r)
+    clashes = sum(1 for g in groups.values() for i, a in enumerate(g) for b in g[i + 1:]
+                  if overlaps(a["start_time"], a["end_time"], b["start_time"], b["end_time"]))
+    fgas = conn.execute("SELECT fgas_expiry FROM users WHERE role = 'installer' AND active = 1").fetchall()
+    return {"pending_total": pending_count(conn),
+            "project_total": conn.execute("SELECT COUNT(*) AS n FROM houses WHERE stage < 9").fetchone()["n"],
+            "fgas_alert": any(fgas_state(r["fgas_expiry"]) in ("expired", "soon") for r in fgas),
+            "clash_total": clashes}
 
 
 def flash(request: Request, key: str, kind: str = "ok", **args) -> None:
@@ -791,7 +812,7 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
                        AND r.photo_request IS NOT NULL) AS photo_requests
                FROM surveys s WHERE s.house_id = ?""", (house_id,)).fetchone(),
         scopes=conn.execute(
-            """SELECT s.version, s.created_at, s.locked_at,
+            """SELECT s.version, s.created_at, s.locked_at, s.note,
                       (SELECT at FROM scope_acks a WHERE a.scope_id = s.id AND a.user_id = ?) AS my_ack,
                       (SELECT COUNT(*) FROM scope_acks a WHERE a.scope_id = s.id) AS ack_count
                FROM scope_versions s WHERE s.house_id = ? ORDER BY s.version DESC""", (user["id"], house_id)).fetchall(),
@@ -803,6 +824,14 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
             (house_id, 1 if is_office(user) else 0, user["id"])).fetchall(),
         variation_counts={r["status"]: r["n"] for r in conn.execute(
             "SELECT status, COUNT(*) AS n FROM variations WHERE house_id = ? GROUP BY status", (house_id,))},
+        variation_rows=conn.execute(
+            """SELECT x.*, u.name AS author_name FROM variations x JOIN users u ON u.id = x.created_by
+               WHERE x.house_id = ? ORDER BY x.number DESC""", (house_id,)).fetchall(),
+        doc_acks={d["id"]: conn.execute(
+            """SELECT u.name, a.at FROM house_members m JOIN users u ON u.id = m.user_id
+               LEFT JOIN doc_acks a ON a.document_id = ? AND a.user_id = u.id WHERE m.house_id = ? ORDER BY u.name""",
+            (d["id"], house_id)).fetchall() for d in project_doc_summary(conn, house_id, user)["docs"]} if is_office(user) else {},
+        VARIATION_KINDS=C.VARIATION_KINDS, DOC_CATEGORIES=C.DOC_CATEGORIES,
         VISIT_KINDS=C.VISIT_KINDS, VISIT_STATUS=C.VISIT_STATUS, VARIATION_STATUS=C.VARIATION_STATUS,
         all_installers=conn.execute("SELECT id, name FROM users WHERE role = 'installer' AND active = 1 ORDER BY name").fetchall()
         if is_office(user) else [],

@@ -92,7 +92,8 @@ eid = db.execute("select id from entries where type='survey'").fetchone()[0]
 att = db.execute("select id from attachments where entry_id=? order by id", (eid,)).fetchall()
 assert staff.get(f"/entries/{eid}/edit").status_code == 403      # 남이 쓴 현장정보는 수정 불가
 ok(inst.post(f"/entries/{eid}/edit", data=dict(property_type="Terraced", floor_area="90", rooms="3", floors="2", body="실외기 뒷마당, 전기 증설 필요", remove_files=str(att[1][0]))))
-r = ok(inst.get(f"/houses/{hid}")); assert "90 ㎡" in r.text and "내용수정 1회" in r.text and "bed.jpg" not in r.text
+r = ok(inst.get(f"/houses/{hid}")); tl = r.text.split('id="timeline"')[1]
+assert "90 ㎡" in tl and "내용수정 1회" in tl and "bed.jpg" not in tl          # 삭제한 첨부는 기록 목록에서 숨김 (작업 기록에는 '첨부 삭제'로 남음)
 r = ok(inst.get(f"/entries/{eid}/edit")); assert "85 ㎡" in r.text and "첨부 삭제" in r.text
 r = ok(staff.get(f"/houses/{hid}?tab=history")); assert "기록 수정" in r.text and "단계 변경" in r.text and "보류 해제" in r.text
 
@@ -147,7 +148,7 @@ inst.post("/login", data=dict(email="i@ex.com", password="pass1234"))
 ok(inst.get("/lang/en?next=/houses"))
 assert db.execute("select lang from users where id=?", (iid,)).fetchone()[0] == "en"
 r = ok(inst.get(f"/houses/{hid}"))
-for s_ in ["Site survey", "Scope agreed", "Stage 4 of 9", "Floor area", "90 ㎡", "Terraced", "1 edit(s)", "History", "Assigned installers"]:
+for s_ in ["Site survey", "Scope agreed", "Stage 4 of 9", "Floor area", "90 ㎡", "Terraced", "1 edit(s)", "History", "People on this project", "Activity log", "Scope versions"]:
     assert s_ in r.text, s_
 assert "Save Site survey" not in r.text            # 예전 기록 입력란은 설치업자에게 숨김 (구조화된 현장조사를 씀)
 r = ok(inst.get(f"/houses/{hid}?tab=history"))

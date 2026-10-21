@@ -19,11 +19,12 @@
 
   <form method="post" action="/login/phone" class="stack auth-pane {% if use_email %}hidden{% endif %}" id="pane-phone">
     <input type="hidden" name="next" value="{{ next }}">
-    <label>{{ _('휴대폰 번호') }}
+    <div class="auth-step">
+      <b>1. {{ _('휴대폰 번호') }}</b>
       <input type="tel" name="phone" value="{{ phone or '' }}" placeholder="07700 900123" title="{{ _('영국 휴대폰은 07…, 한국 휴대폰은 010…, 다른 나라는 +국가번호') }}" inputmode="tel" autocomplete="tel" required {% if not use_email %}autofocus{% endif %}>
-    </label>
-    <p class="muted small">{{ _('문자로 받은 6자리 코드로 로그인합니다. 비밀번호가 필요 없습니다.') }}</p>
-    <button class="btn primary">{{ _('문자로 코드 받기') }}</button>
+      <span class="muted small">{{ _('문자로 받은 6자리 코드로 로그인합니다. 비밀번호가 필요 없습니다.') }}</span>
+    </div>
+    <button class="btn primary big">{{ _('문자로 코드 받기') }}</button>
   </form>
   {% endif %}
 
@@ -35,6 +36,7 @@
     <a class="small" href="/forgot">{{ _('비밀번호를 잊으셨나요?') }}</a>
   </form>
   <p class="muted small">{{ _('계정이 없나요?') }} <a href="/signup">{{ _('초대코드로 가입') }}</a></p>
+  <p class="muted small center">{{ _('위치는 "현장 도착" 또는 "오늘 작업 끝"을 누를 때만 저장됩니다.') }}</p>
 </div>
 <script>
   document.querySelectorAll('.auth-tabs a').forEach(a => a.addEventListener('click', e => {

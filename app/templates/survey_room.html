@@ -5,9 +5,10 @@
 {% block content %}
 {% set ids = rooms|map(attribute='id')|list %}
 {% set idx = ids.index(room.id) %}
-{{ s.flow_head('/houses/' ~ house.id ~ '/survey', _('현장조사') ~ ' · ' ~ house.address,
-               _('방 {n}개 중 {i}번째', n=rooms|length, i=idx + 1), steps=rooms|length * 2 + 1, current=idx * 2) }}
+{% call s.flow_head('/houses/' ~ house.id ~ '/survey', _('현장조사') ~ ' · ' ~ house.address,
+               _('방 {n}개 중 {i}번째', n=rooms|length, i=idx + 1), steps=rooms|length * 2 + 1, current=idx * 2) %}
 <p class="flow-hint">{{ _('방마다: 실내기 → 액세서리 · 마지막에 실외기') }}</p>
+{% endcall %}
 
 {% if room.photo_request %}<div class="flash flash-warn">📷 {{ _('회사 요청') }}: {{ room.photo_request }}</div>{% endif %}
 

@@ -1,10 +1,11 @@
 {# 현장조사 화면 공통 조각 #}
 
 {# 큰 선택 버튼 (하나만): 라디오 버튼을 버튼처럼 보이게 #}
-{% macro choices(name, options, value, cls='') -%}
+{% macro choices(name, options, value, cls='', default=none) -%}
 <div class="choices {{ cls }}">
   {% for key, label in options.items() %}
-    <label class="choice"><input type="radio" name="{{ name }}" value="{{ key }}" {% if value == key %}checked{% endif %}><span>{{ _(label) }}</span></label>
+    {# default: 실내기 형태별 기본값. 고르지 않고 기본값 그대로면 회색 점선으로 보여준다 (시안 p.7) #}
+    <label class="choice {% if default is not none and key == default %}is-default{% endif %}"><input type="radio" name="{{ name }}" value="{{ key }}" {% if value == key %}checked{% endif %}><span>{{ _(label) }}{% if default is not none and key == default %} ✓{% endif %}</span></label>
   {% endfor %}
 </div>
 {%- endmacro %}
@@ -74,14 +75,17 @@
 
 {# 위쪽: 뒤로가기 + 제목 + 단계 표시줄 #}
 {% macro flow_head(back, sub, title, steps=None, current=None) -%}
-<header class="flow-head">
-  <a class="back-btn" href="{{ back }}" aria-label="{{ _('뒤로') }}">‹</a>
-  <div>
-    <div class="flow-sub">{{ sub }}</div>
-    <h1>{{ title }}</h1>
-  </div>
-</header>
-{% if steps %}
-<div class="flow-steps">{% for i in range(steps) %}<span class="{% if i < current %}done{% elif i == current %}now{% endif %}"></span>{% endfor %}</div>
-{% endif %}
+<div class="flow-top">
+  <header class="flow-head">
+    <a class="back-btn" href="{{ back }}" aria-label="{{ _('뒤로') }}">‹</a>
+    <div>
+      <div class="flow-sub">{{ sub }}</div>
+      <h1>{{ title }}</h1>
+    </div>
+  </header>
+  {% if steps %}
+  <div class="flow-steps">{% for i in range(steps) %}<span class="{% if i < current %}done{% elif i == current %}now{% endif %}"></span>{% endfor %}</div>
+  {% endif %}
+  {{ caller() if caller is defined else '' }}
+</div>
 {%- endmacro %}

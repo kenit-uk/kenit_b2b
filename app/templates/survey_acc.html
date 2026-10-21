@@ -32,7 +32,7 @@
       {% if tdef.get(key) == 'na' %}<span class="muted small">{{ _('{type}: 보통 필요 없음', type=_(C.INDOOR_TYPES[room.indoor_type or 'wall'])) }}</span>
       {% elif tdef.get(key) is none %}<span class="must small">{{ _('꼭 확인') }}</span>{% endif %}
     </div>
-    {{ s.choices(key, opts, acc[key]) }}
+    {{ s.choices(key, opts, acc[key], default=none if key in (room.acc|fromjson) else tdef.get(key)) }}
     {% endfor %}
 
     <p class="muted small">{{ _('트렁킹은 방마다 묻지 않고, 실외기 화면에서 프로젝트 전체로 한 번만 확인합니다.') }}</p>

@@ -36,25 +36,20 @@
     <div class="sidebar-body">
       <nav class="side-nav">
         {% if is_office %}
-        <a class="{% if path == '/approvals' %}active{% endif %}" href="/approvals">✅ {{ _('승인 대기') }}{% if pending_total %}<span class="count orange">{{ pending_total }}</span>{% endif %}</a>
-        <a class="{% if path.startswith('/houses') %}active{% endif %}" href="/houses">📋 {{ _('프로젝트') }}{% if unread_total %}<span class="count" title="{{ _('확인하지 않은 현장') }}">{{ unread_total }}</span>{% endif %}</a>
-        <a class="{% if path == '/calendar' %}active{% endif %}" href="/calendar">📅 {{ _('달력') }}</a>
+        <a class="{% if path.startswith('/houses') %}active{% endif %}" href="/houses">{{ _('프로젝트') }}<span class="nav-num">{{ project_total }}</span>{% if unread_total %}<span class="count" title="{{ _('확인하지 않은 현장') }}">{{ unread_total }}</span>{% endif %}</a>
+        <a class="{% if path == '/approvals' %}active{% endif %}" href="/approvals">{{ _('승인 대기') }}{% if pending_total %}<span class="count orange">{{ pending_total }}</span>{% endif %}</a>
+        <a class="{% if path == '/users' %}active{% endif %}" href="/users">{{ _('설치업자') }}{% if fgas_alert %}<span class="nav-alert">!</span>{% endif %}</a>
+        <a class="{% if path == '/calendar' %}active{% endif %}" href="/calendar">{{ _('달력') }}{% if clash_total %}<span class="nav-alert text">{{ _('중복 {n}건', n=clash_total) }}</span>{% endif %}</a>
+        <a class="{% if path == '/invites' %}active{% endif %}" href="/invites">{{ _('초대하기') }}</a>
         {% else %}
-        <a class="{% if path == '/today' %}active{% endif %}" href="/today">📅 {{ _('오늘') }}</a>
-        <a class="{% if path.startswith('/houses') or path.startswith('/visits') %}active{% endif %}" href="/houses">📋 {{ _('내 작업') }}{% if unread_total %}<span class="count" title="{{ _('확인하지 않은 현장') }}">{{ unread_total }}</span>{% endif %}</a>
+        <a class="{% if path == '/today' %}active{% endif %}" href="/today">{{ _('오늘') }}</a>
+        <a class="{% if path.startswith('/houses') or path.startswith('/visits') %}active{% endif %}" href="/houses">{{ _('내 작업') }}{% if unread_total %}<span class="count" title="{{ _('확인하지 않은 현장') }}">{{ unread_total }}</span>{% endif %}</a>
         {% endif %}
       </nav>
 
-      {% if is_office %}
-        <div class="side-section">{{ _('관리') }}</div>
-        <nav class="side-nav">
-          <a class="{% if path == '/invites' %}active{% endif %}" href="/invites">✉️ {{ _('초대하기') }}</a>
-          <a class="{% if path == '/users' %}active{% endif %}" href="/users">👥 {{ _('설치업자·사용자') }}</a>
-        </nav>
-      {% endif %}
-
       <div class="side-foot">
         <div class="me">
+          <span class="muted-side">{{ _('로그인') }}:</span>
           <span class="me-name">{{ user.name }}</span>
           <span class="role role-{{ user.role }}">{{ _(ROLES[user.role]) }}</span>
         </div>

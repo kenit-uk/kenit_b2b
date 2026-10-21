@@ -156,7 +156,7 @@ assert f"report-{rid}" not in admin.get("/approvals").text
 
 # 프로젝트 화면: 일정·변경 요청 카드, 설치업자는 본인 방문만
 page = dave.get(f"/houses/{hid}").text
-sched = page.split('id="visits"')[1].split('id="variations"')[0]
+sched = page.split('id="visits"')[1].split('id="activity"')[0]
 assert "일정" in page and "1차 시공" in sched and "불가 답변" not in sched and "Sam R." not in sched
 page = admin.get(f"/houses/{hid}").text; assert "Sam R." in page and "불가 답변" in page
 # 진행 중 프로젝트 표

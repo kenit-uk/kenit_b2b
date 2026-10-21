@@ -4,14 +4,22 @@
 {% block content %}
 <div class="card auth-card">
   <h1>{{ _('코드 입력') }}</h1>
-  <p class="muted">{{ _('{phone}(으)로 6자리 코드를 보냈습니다.', phone=masked) }}</p>
   {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
   {% if notice %}<div class="flash flash-ok">{{ _(notice) }}</div>{% endif %}
-  <form method="post" action="/login/phone/verify" class="stack">
+  <form method="post" action="/login/phone/verify" class="stack code-form">
     <input type="hidden" name="next" value="{{ next }}">
-    <input class="code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}"
-           maxlength="7" placeholder="••••••" required autofocus aria-label="{{ _('6자리 코드') }}">
-    <button class="btn primary">{{ _('로그인') }}</button>
+    <div class="auth-step">
+      <b>1. {{ _('휴대폰 번호') }}</b>
+      <span class="ok-text small">{{ masked }} · {{ _('문자로 코드 발송됨') }}</span>
+    </div>
+    <div class="auth-step">
+      <b>2. {{ _('6자리 코드 입력') }}</b>
+      <input type="hidden" name="code">
+      <div class="code-boxes" role="group" aria-label="{{ _('6자리 코드') }}">
+        {% for i in range(6) %}<input class="code-box" inputmode="numeric" maxlength="{{ 6 if i == 0 else 1 }}" {% if i == 0 %}autocomplete="one-time-code" autofocus{% else %}autocomplete="off"{% endif %} aria-label="{{ i + 1 }}">{% endfor %}
+      </div>
+    </div>
+    <button class="btn primary big">{{ _('로그인') }}</button>
   </form>
   <form method="post" action="/login/phone/resend" class="resend">
     <input type="hidden" name="next" value="{{ next }}">
@@ -21,8 +29,25 @@
   <p class="small"><a href="/login">← {{ _('다른 번호로 로그인') }}</a></p>
 </div>
 <script>
-  // 6자리를 다 넣으면 바로 로그인
-  const c = document.querySelector('.code-input');
-  c.addEventListener('input', () => { if (c.value.replace(/\D/g, '').length === 6) c.form.requestSubmit(); });
+  // 6칸 코드 입력: 한 칸에 한 숫자, 자동으로 다음 칸. 문자 자동 채우기·붙여넣기로 6자리가 한 번에 들어와도 나눠 넣는다.
+  (function () {
+    const form = document.querySelector('.code-form'), boxes = [...form.querySelectorAll('.code-box')], hidden = form.querySelector('[name=code]');
+    const sync = () => { hidden.value = boxes.map(b => b.value).join(''); if (hidden.value.length === 6) form.requestSubmit(); };
+    boxes.forEach((b, i) => {
+      b.addEventListener('input', () => {
+        const digits = b.value.replace(/\D/g, '');
+        if (digits.length > 1) {   // 자동 채우기·붙여넣기
+          digits.slice(0, 6).split('').forEach((d, k) => { if (boxes[k]) boxes[k].value = d; });
+          boxes[Math.min(digits.length, 6) - 1].focus();
+        } else {
+          b.value = digits;
+          if (digits && boxes[i + 1]) boxes[i + 1].focus();
+        }
+        sync();
+      });
+      b.addEventListener('keydown', e => { if (e.key === 'Backspace' && !b.value && boxes[i - 1]) boxes[i - 1].focus(); });
+    });
+    form.addEventListener('submit', () => { hidden.value = boxes.map(b => b.value).join(''); });
+  })();
 </script>
 {% endblock %}
