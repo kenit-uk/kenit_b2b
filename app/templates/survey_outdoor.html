@@ -65,9 +65,13 @@
 
   {% if can_edit %}
   <div class="sticky-actions">
+    {% if user.role == 'installer' %}
     <button class="btn primary block" name="action" value="submit">{{ _('현장조사 회사로 보내기') }}</button>
+    {% else %}
+    <button class="btn primary block" name="action" value="later">{{ _('저장') }}</button>
+    {% endif %}
     <p class="muted small center">{{ _('방 {r}개 · 사진 {p}장', r=rooms|length, p=(room_media.values()|map('length')|sum) + (odu_media.values()|map('length')|sum) + board_media|length) }}</p>
-    <button class="link-center" name="action" value="later">{{ _('저장하고 나중에 마치기') }}</button>
+    {% if user.role == 'installer' %}<button class="link-center" name="action" value="later">{{ _('저장하고 나중에 마치기') }}</button>{% endif %}
   </div>
   {% endif %}
 </form>

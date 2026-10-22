@@ -6,11 +6,11 @@
   {% if r.model %}<div><dt>{{ _('모델') }}</dt><dd>{{ r.model }}</dd></div>{% endif %}
   {% if r.location %}<div><dt>{{ _('설치 위치') }}</dt><dd>{{ r.location }}</dd></div>{% endif %}
   <div><dt>{{ _('온도 컨트롤') }}</dt><dd>
-    {%- for c in acc.controls or [] %}{{ _(C.CONTROLS[c]) }}{% if c == 'lcd' and acc.lcd_colour %} ({{ _(C.LCD_COLOURS[acc.lcd_colour]) }}){% endif %}{% if not loop.last %} · {% endif %}{% else %}—{% endfor -%}
+    {%- for c in acc.controls or [] %}{{ SOV.control_label.get(c, c) }}{% if c == 'lcd' and acc.lcd_colour %} ({{ SOV.lcd_label.get(acc.lcd_colour, acc.lcd_colour) }}){% endif %}{% if not loop.last %} · {% endif %}{% else %}—{% endfor -%}
   </dd></div>
-  <div><dt>{{ _('그릴·플레넘·점검구') }}</dt><dd>
-    {{ _(C.INCLUDE_CHOICES.get(acc.grille, '—')) }} · {{ _(C.INCLUDE_CHOICES.get(acc.plenum, '—')) }} · {{ _(C.HATCH_CHOICES.get(acc.hatch, '—')) }}
-  </dd></div>
+  {% for it in SOV.acc_items if it.active or acc.get(it.key) is not none %}
+  <div><dt>{{ it.label }}</dt><dd>{{ it.choices.get(acc.get(it.key), '—') }}</dd></div>
+  {% endfor %}
   {% if acc.extra %}<div><dt>{{ _('기타 부가 사항') }}</dt><dd>{{ acc.extra }}</dd></div>{% endif %}
   {% if r.memo %}<div class="wide"><dt>{{ _('메모') }}</dt><dd>{{ r.memo }}</dd></div>{% endif %}
 </dl>
@@ -35,10 +35,9 @@
   {%- if v in (none, '', []) -%}—
   {%- elif field == 'indoor_type' -%}{{ _(C.INDOOR_TYPES.get(v, v)) }}
   {%- elif field == 'kw' -%}{{ _(C.KW_OPTIONS.get(v, v)) }}
-  {%- elif field == 'controls' -%}{% for c in v %}{{ _(C.CONTROLS.get(c, c)) }}{% if not loop.last %} · {% endif %}{% endfor %}
-  {%- elif field in ('lcd_colour',) -%}{{ _(C.LCD_COLOURS.get(v, v)) }}
-  {%- elif field in ('grille', 'plenum') -%}{{ _(C.INCLUDE_CHOICES.get(v, v)) }}
-  {%- elif field == 'hatch' -%}{{ _(C.HATCH_CHOICES.get(v, v)) }}
+  {%- elif field == 'controls' -%}{% for c in v %}{{ SOV.control_label.get(c, c) }}{% if not loop.last %} · {% endif %}{% endfor %}
+  {%- elif field in ('lcd_colour',) -%}{{ SOV.lcd_label.get(v, v) }}
+  {%- elif field in SOV.answer_label -%}{{ SOV.answer_label[field].get(v, v) }}
   {%- elif field == 'mount' -%}{{ _(C.ODU_MOUNTS.get(v, v)) }}
   {%- elif field == 'system' -%}{{ _(C.SYSTEMS.get(v, v)) }}
   {%- elif field in ('pipe_ok', 'power_near') -%}{{ _(C.YES_NO.get(v, v)) }}
@@ -58,7 +57,7 @@
 {% macro changes(list) -%}
 <ul class="change-list">
   {% for f, old, new in list %}
-  <li><span class="muted">{{ _(FIELD_LABELS.get(f, f)) }}</span>
+  <li><span class="muted">{{ SOV.item_label[f] if f in SOV.item_label else _(FIELD_LABELS.get(f, f)) }}</span>
     <s>{{ val(f, old) }}</s> → <b>{{ val(f, new) }}</b></li>
   {% endfor %}
 </ul>

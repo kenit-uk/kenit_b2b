@@ -74,7 +74,7 @@ assert dave.post(f"/users/{uid('m@ex.com')}/reset-link").status_code == 403
 assert mgr.post(f"/users/{uid('a@ex.com')}/reset-link").status_code == 403
 r = mgr.post(f"/users/{uid('d@ex.com')}/reset-link", follow_redirects=True)
 link = re.search(r'value="(http[^"]+/reset/[^"]+)"', r.text).group(1); token = link.rsplit("/", 1)[1]
-assert "한 번만 보입니다" in r.text and "/reset/" not in mgr.get("/users").text                            # 다시 열면 안 보임
+assert "한 번만 보입니다" in r.text and "/reset/" not in mgr.get("/users/staff").text                            # 다시 열면 안 보임
 assert token not in str(db.execute("select token_hash from password_resets").fetchall())                  # 토큰은 해시로만 저장
 assert ko().get(f"/reset/{token}").status_code == 200
 r = ko().post(f"/reset/{token}", data=dict(password="linkpass1", password2="linkpass1"), follow_redirects=True); assert "비밀번호를 정했습니다" in r.text
@@ -90,12 +90,18 @@ r = admin.post("/houses/new", data=dict(address="1 Gap Road"), follow_redirects=
 hid = int(re.search(r"/houses/(\d+)", str(r.url)).group(1))
 admin.post(f"/houses/{hid}/members", data=dict(user_id=uid("d@ex.com")))
 dave = ko(); login(dave, "d@ex.com", "linkpass1"); dave.get("/lang/ko")
-assert 'id="new"' not in dave.get(f"/houses/{hid}").text and 'id="new"' in admin.get(f"/houses/{hid}").text
+assert 'id="new"' not in dave.get(f"/houses/{hid}").text and 'id="new"' not in admin.get(f"/houses/{hid}").text   # 새 기록 작성 없앰
 
 # ---- 5. 현장조사 '검토만 완료' → 승인 대기에서 빠짐, 다시 열기
 dave.post(f"/houses/{hid}/survey/start")
 odu = db.execute("select id from survey_odus order by id desc").fetchone()[0]
 room = db.execute("select id from survey_rooms order by id desc").fetchone()[0]
+# 빈 조사는 검토 완료·작업 범위 만들기 불가, '다음 할 일'이 직접 고치기를 안내
+r = admin.post(f"/houses/{hid}/survey/reviewed", follow_redirects=True)
+assert "조사 내용이 비어 있습니다" in r.text and db.execute("select status from surveys where house_id=?", (hid,)).fetchone()[0] == "draft"
+admin.post(f"/houses/{hid}/scope/from-survey")
+assert not db.execute("select 1 from scope_versions where house_id=?", (hid,)).fetchone()
+assert "조사 내용 직접 고치기" in admin.get(f"/houses/{hid}/survey").text
 dave.post(f"/houses/{hid}/survey/rooms/{room}", data=dict(name="거실", indoor_type="wall", kw="3.5", action="stay"))
 dave.post(f"/houses/{hid}/survey/rooms/{room}/acc", data=dict(grille="na", plenum="na", hatch="na"))
 dave.post(f"/houses/{hid}/survey/outdoor", data={f"odu_{odu}_mount": "ground", "system": "single", "electric_work": "noneed", "trunking": "excl", "action": "submit"})
@@ -136,7 +142,7 @@ assert db.execute("select date, start_time, override_reason from visits where id
 admin.post(f"/visits/{v2}/reschedule", data=dict(date=D(4), start_time="08:00", end_time="09:00", installer_id=str(uid("s@ex.com")), mode="proposed"))
 assert db.execute("select installer_id, status from visits where id=?", (v2,)).fetchone() == (uid("s@ex.com"), "proposed")
 assert db.execute("select 1 from house_members where house_id=? and user_id=?", (hid, uid("s@ex.com"))).fetchone()   # 새 설치업자 자동 배정
-assert "가능한가요?" in sam.get("/today").text or "예" in sam.get("/today").text
+assert "가능한가요?" in sam.get("/houses").text or "예" in sam.get("/houses").text
 admin.post(f"/visits/{v1}/cancel")
 r = admin.post(f"/visits/{v1}/reschedule", data=dict(date=D(5)), follow_redirects=True); assert "바꿀 수 없습니다" in r.text
 print("GAPS OK")

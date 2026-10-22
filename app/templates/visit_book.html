@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% import "_booking.html" as bk with context %}
+{% block title %}{{ _('방문 예약하기') }} · {{ house.address }}{% endblock %}
+{% block content %}
+<a class="back" href="{{ '/calendar' if form.get('from') == 'calendar' else '/houses/' ~ house.id ~ '#visits' }}">← {{ house.ref_no }} · {{ house.address }}</a>
+<div class="page-head"><h1>{{ _('방문 예약하기') }}</h1></div>
+<section class="card">{{ bk.booking_form(installers, form, warnings, house=house, origin=form.get('from') or 'project') }}</section>
+{% endblock %}

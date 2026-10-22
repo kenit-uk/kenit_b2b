@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ _('현장조사 질문지') }} · {{ BRAND }}{% endblock %}
+{% block main_class %}container wide{% endblock %}
+{% block content %}
+<p class="crumb small muted">{{ _('프로젝트 관리') }}</p>
+<div class="page-head"><h1>{{ _('현장조사 질문지 (액세서리·부가 사항)') }}</h1></div>
+<p class="muted small">{{ _('설치업자가 방마다 고르는 액세서리·부가 사항 선택지입니다. 지우는 대신 "사용"을 끄면 새 조사에서 숨겨지고, 예전 조사·작업 범위에 남은 값은 그대로 보입니다. 영어 이름을 비워 두면 영어 화면에도 한국어 이름이 나옵니다.') }}</p>
+
+{% macro name_rows(prefix, rows, title, hint='') %}
+<section class="card">
+  <h2>{{ title }}</h2>
+  {% if hint %}<p class="muted small">{{ hint }}</p>{% endif %}
+  <table class="history settings-table">
+    <thead><tr><th>{{ _('이름 (한국어)') }}</th><th>{{ _('이름 (영어)') }}</th><th>{{ _('사용') }}</th></tr></thead>
+    <tbody>
+    {% for o in rows %}
+      <tr>
+        <td><input name="{{ prefix }}{{ loop.index0 }}_ko" value="{{ o.ko }}" maxlength="60" required></td>
+        <td><input name="{{ prefix }}{{ loop.index0 }}_en" value="{{ o.en or '' }}" maxlength="60"></td>
+        <td><label class="check"><input type="checkbox" name="{{ prefix }}{{ loop.index0 }}_active" value="1" {% if o.active %}checked{% endif %}> {{ _('사용') }}</label></td>
+      </tr>
+    {% endfor %}
+      <tr class="new-row">
+        <td><input name="{{ prefix }}new_ko" maxlength="60" placeholder="{{ _('+ 새 항목 (한국어)') }}"></td>
+        <td><input name="{{ prefix }}new_en" maxlength="60" placeholder="{{ _('영어 (선택)') }}"></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+{% endmacro %}
+
+<form method="post" action="/settings/survey" class="stack">
+  {{ name_rows('c', opts.controls, _('온도 컨트롤 방식'), _('여러 개 고를 수 있습니다. "벽부착 LCD"를 고르면 LCD 색상을 묻습니다.')) }}
+  {{ name_rows('l', opts.lcd_colours, _('벽부착 LCD 색상')) }}
+
+  <section class="card">
+    <h2>{{ _('액세서리 항목') }}</h2>
+    <p class="muted small">{{ _('방마다 하나씩 답하는 항목입니다. 실내기 형태별 기본값을 정하면 설치업자 화면에 회색 ✓로 미리 골라져 있고, "꼭 확인"이면 직접 골라야 보낼 수 있습니다.') }}</p>
+    <table class="history settings-table">
+      <thead><tr><th>{{ _('이름 (한국어)') }}</th><th>{{ _('이름 (영어)') }}</th><th>{{ _('답') }}</th>
+        {% for t, tl in C.INDOOR_TYPES.items() %}<th>{{ _(tl) }}</th>{% endfor %}<th>{{ _('사용') }}</th></tr></thead>
+      <tbody>
+      {% for it in opts['items'] %}{% set i = loop.index0 %}
+        <tr>
+          <td><input name="i{{ i }}_ko" value="{{ it.ko }}" maxlength="60" required></td>
+          <td><input name="i{{ i }}_en" value="{{ it.en or '' }}" maxlength="60"></td>
+          <td class="small muted">{{ _(ANSWER_TYPES[it.answers]) }}</td>
+          {% for t in C.INDOOR_TYPES %}
+          <td><select name="i{{ i }}_def_{{ t }}"><option value="">{{ _('꼭 확인') }}</option>
+            {% for k, lab in ANSWERS[it.answers].items() %}<option value="{{ k }}" {% if (it.defaults or {}).get(t) == k %}selected{% endif %}>{{ _(lab) }}</option>{% endfor %}</select></td>
+          {% endfor %}
+          <td><label class="check"><input type="checkbox" name="i{{ i }}_active" value="1" {% if it.active %}checked{% endif %}> {{ _('사용') }}</label></td>
+        </tr>
+      {% endfor %}
+        <tr class="new-row">
+          <td><input name="inew_ko" maxlength="60" placeholder="{{ _('+ 새 항목 (예: 배수 펌프)') }}"></td>
+          <td><input name="inew_en" maxlength="60" placeholder="{{ _('영어 (선택)') }}"></td>
+          <td><select name="inew_answers">{% for k, lab in ANSWER_TYPES.items() %}<option value="{{ k }}">{{ _(lab) }}</option>{% endfor %}</select></td>
+          {% for t in C.INDOOR_TYPES %}
+          <td><select name="inew_def_{{ t }}"><option value="">{{ _('꼭 확인') }}</option><option value="na">{{ _('해당 없음') }}</option></select></td>
+          {% endfor %}
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  {{ name_rows('e', opts.extras, _('기타 부가 사항 — 빠른 선택'), _('설치업자가 눌러서 메모에 바로 붙일 수 있는 자주 쓰는 말입니다 (예: 콘센트 추가, 배수 펌프 필요).')) }}
+
+  <div class="sticky-actions"><button class="btn primary">{{ _('저장') }}</button></div>
+</form>
+{% endblock %}

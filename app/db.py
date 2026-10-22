@@ -75,6 +75,26 @@ CREATE TABLE IF NOT EXISTS password_resets (
   used_at    TEXT
 );
 
+-- 설치업자 자격증 (F-Gas 개인, 업체 인증 등). 회사가 승인해야 냉매 작업(시공)에 배정할 수 있다.
+CREATE TABLE IF NOT EXISTS licences (
+  id            {pk},
+  user_id       INTEGER NOT NULL REFERENCES users(id),
+  kind          TEXT NOT NULL,
+  number        TEXT,
+  expiry        TEXT,
+  stored_name   TEXT,
+  original_name TEXT,
+  mime          TEXT,
+  size          INTEGER,
+  status        TEXT NOT NULL DEFAULT 'pending',
+  uploaded_by   INTEGER NOT NULL REFERENCES users(id),
+  created_at    TEXT NOT NULL,
+  checked_by    INTEGER REFERENCES users(id),
+  checked_at    TEXT,
+  check_note    TEXT,
+  removed_at    TEXT
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -239,7 +259,7 @@ CREATE TABLE IF NOT EXISTS doc_acks (
   PRIMARY KEY (document_id, user_id)
 );
 
--- 방문: 현장조사 / 1차 시공 / 2차 시공 / 기타. 한 프로젝트가 여러 날·여러 방문으로 나뉜다.
+-- 방문: 현장조사 / 시공(1차·2차·… seq) / 기타. 한 프로젝트가 여러 날·여러 방문으로 나뉜다.
 --  status: requested(설치업자에게 날짜 후보 요청) → options(후보 받음) → confirmed(확정)
 --          proposed(회사가 날짜 제안, 설치업자 가능 여부 대기) → confirmed / declined
 --          done(작업 끝 보고됨), cancelled
@@ -355,6 +375,21 @@ CREATE TABLE IF NOT EXISTS house_views (
   house_id     INTEGER NOT NULL REFERENCES houses(id),
   last_seen_id INTEGER NOT NULL,
   PRIMARY KEY (user_id, house_id)
+);
+
+-- 프로젝트별 결제 (계약금·중도금·잔금). 회사가 손으로 표시한다 (회계 프로그램 연동은 나중에).
+CREATE TABLE IF NOT EXISTS payments (
+  id          {pk},
+  house_id    INTEGER NOT NULL REFERENCES houses(id),
+  kind        TEXT NOT NULL,
+  amount      TEXT,
+  status      TEXT NOT NULL DEFAULT 'not_due',
+  invoiced_on TEXT,
+  received_on TEXT,
+  note        TEXT,
+  updated_by  INTEGER REFERENCES users(id),
+  updated_at  TEXT,
+  UNIQUE (house_id, kind)
 );
 """
 
@@ -479,10 +514,23 @@ def init_db() -> dict:
             ensure_columns(conn)
             conn.raw.commit()
             _sqlite_upgrade_users(conn)
+            ensure_columns(conn)          # 다시 만든 users 테이블에도 나중에 추가한 칸(F-Gas 등)을 붙인다
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone_e164)")
             conn.raw.commit()
         _backfill_login_phones(conn)
+        # 단계 번호 체계: 예전 DB는 9단계(1·2차 시공) 또는 8단계(시공 하나), 지금은 6단계
+        scheme = get_setting(conn, "stage_scheme") or (
+            "8" if get_setting(conn, "install_unified") else "9" if get_setting(conn, "projects_migrated") else "6")
         _migrate_projects(conn)
+        _migrate_install_visits(conn)
+        _migrate_stage_scheme(conn, scheme)
+        with conn:
+            # 승인 기능 전에 회사가 직접 적어 둔 F-Gas 정보는 승인된 것으로 본다 (설치업자는 이 칸을 직접 쓸 수 없었음)
+            conn.execute("""UPDATE users SET fgas_approved_at = created_at
+                            WHERE fgas_no IS NOT NULL AND fgas_expiry IS NOT NULL AND fgas_approved_at IS NULL""")
+            # 현장조사를 이미 제출한 프로젝트의 현장조사 방문은 끝난 것으로 (예전에는 열린 채로 남아 도착·취소 버튼이 보였음)
+            conn.execute("""UPDATE visits SET status = 'done' WHERE kind = 'survey' AND status IN ('confirmed', 'proposed')
+                            AND house_id IN (SELECT house_id FROM surveys WHERE status IN ('submitted', 'reviewed'))""")
         with conn:
             for role in ("staff", "manager", "installer"):
                 code = secrets.token_urlsafe(9)
@@ -508,6 +556,11 @@ NEW_COLS = [
     ("media", "tag", "TEXT"),            # 현장 사진의 방 태그
     ("media", "visit_id", "INTEGER"),
     ("users", "fgas_no", "TEXT"), ("users", "fgas_expiry", "TEXT"), ("users", "fgas_company", "TEXT"),
+    ("users", "fgas_approved_at", "TEXT"), ("users", "fgas_approved_by", "INTEGER"),   # 회사가 F-Gas 자격을 승인한 때
+    ("houses", "lat", "REAL"), ("houses", "lng", "REAL"), ("houses", "geo_postcode", "TEXT"),   # 우편번호로 찾은 현장 좌표 (도착 위치 확인용)
+    ("visits", "seq", "INTEGER"),        # 시공 순번 (1차·2차·3차 …)
+    ("users", "deleted_at", "TEXT"), ("users", "deleted_by", "INTEGER"),
+    ("houses", "contract_total", "TEXT"),   # 총 계약 금액 (잔금 = 총액 − 계약금 − 중도금)   # 관리자가 삭제한 계정 (기록 보존을 위해 행은 남김)
 ]
 
 
@@ -517,6 +570,58 @@ def ensure_columns(conn: "Conn") -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}")
         elif col not in {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+
+
+# 예전 단계 번호 → 지금(6단계) 번호
+STAGE_MAPS = {
+    "9": {1: 1, 2: 1, 3: 2, 4: 3, 5: 3, 6: 4, 7: 4, 8: 5, 9: 6},   # 1·2차 시공이 따로 있던 9단계
+    "8": {1: 1, 2: 1, 3: 2, 4: 3, 5: 3, 6: 4, 7: 5, 8: 6},          # 시공 하나 8단계
+}
+
+
+def _migrate_stage_scheme(conn: Conn, scheme: str) -> None:
+    """프로젝트 단계와 작업 기록의 '단계 변경'을 6단계 번호로 옮긴다. 한 번만 (stage_scheme = 6)."""
+    if scheme == "6":
+        if not get_setting(conn, "stage_scheme"):
+            with conn:
+                set_setting(conn, "stage_scheme", "6")
+        return
+    m = STAGE_MAPS[scheme]
+    case = " ".join(f"WHEN {a} THEN {b}" for a, b in m.items())
+    with conn:
+        conn.execute(f"UPDATE houses SET stage = CASE stage {case} ELSE stage END")
+        for r in conn.execute("SELECT id, detail FROM audit_log WHERE action = 'stage'").fetchall():
+            nums = re.findall(r"\d+", r["detail"] or "")
+            if len(nums) == 2:
+                a, b = (m.get(int(n), int(n)) for n in nums)
+                conn.execute("UPDATE audit_log SET detail = ? WHERE id = ?", (f"{a} → {b}", r["id"]))
+        set_setting(conn, "stage_scheme", "6")
+
+
+def _migrate_install_visits(conn: Conn) -> None:
+    """1차·2차 시공 방문을 '시공' 하나로 (순번 1차·2차…로 나눔), 결제 관문 이름도 맞춘다. 한 번만 한다."""
+    if get_setting(conn, "install_unified"):
+        return
+    with conn:
+        # 방문: first_fix·second_fix → install, 프로젝트마다 날짜 순으로 1차·2차…
+        conn.execute("UPDATE visits SET kind = 'install' WHERE kind IN ('first_fix', 'second_fix')")
+        seqs: dict = {}
+        for v in conn.execute("""SELECT id, house_id FROM visits WHERE kind = 'install' AND status != 'cancelled'
+                                 ORDER BY house_id, COALESCE(date, '9999'), id""").fetchall():
+            seqs[v["house_id"]] = seqs.get(v["house_id"], 0) + 1
+            conn.execute("UPDATE visits SET seq = ? WHERE id = ?", (seqs[v["house_id"]], v["id"]))
+        for r in conn.execute("""SELECT id, detail FROM audit_log WHERE action IN ('visit_create', 'visit_update', 'arrive', 'finish')
+                                 AND (detail LIKE ? OR detail LIKE ?)""", ("%first_fix%", "%second_fix%")).fetchall():
+            conn.execute("UPDATE audit_log SET detail = ? WHERE id = ?",
+                         (r["detail"].replace("first_fix", "install").replace("second_fix", "install"), r["id"]))
+        gates = get_setting(conn, "payment_gates")
+        if gates:
+            g = json.loads(gates)
+            g = {"deposit_before_install": g.get("deposit_before_first_fix", g.get("deposit_before_install", False)),
+                 "interim_before_next_install": g.get("interim_before_second_fix", g.get("interim_before_next_install", False)),
+                 "balance_before_complete": g.get("balance_before_complete", False)}
+            set_setting(conn, "payment_gates", json.dumps(g))
+        set_setting(conn, "install_unified", "1")
 
 
 def ref_no_for(house_id: int) -> str:

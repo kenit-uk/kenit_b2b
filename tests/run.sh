@@ -4,13 +4,13 @@
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
 TMP=$(mktemp -d)
-TESTS="e2e e2e_unread e2e_roles e2e_sms e2e_survey e2e_scope_docs e2e_visits e2e_gaps migrate_check concurrent_init"
+TESTS="e2e e2e_unread e2e_roles e2e_sms e2e_survey e2e_scope_docs e2e_visits e2e_gaps e2e_flow migrate_check migrate_install concurrent_init"
 fail=0
 
 run() {  # run <db 이름> <테스트> [환경변수...]
   local label=$1 name=$2; shift 2
   rm -rf "$TMP/t"
-  if env "$@" DATA_DIR="$TMP/t/data" UPLOAD_DIR="$TMP/t/up" PYTHONPATH=. $PY "tests/$name.py" > "$TMP/out" 2>&1; then
+  if env "$@" GEOCODE_OFF=1 DATA_DIR="$TMP/t/data" UPLOAD_DIR="$TMP/t/up" PYTHONPATH=. $PY "tests/$name.py" > "$TMP/out" 2>&1; then
     printf "  %-8s %-14s %s\n" "$label" "$name" "$(tail -1 "$TMP/out")"
   else
     printf "  %-8s %-14s FAILED\n" "$label" "$name"; grep -v "^\[초기\|^\[SMS" "$TMP/out" | tail -15; fail=1

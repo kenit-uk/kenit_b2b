@@ -105,6 +105,18 @@ templates.env.filters["size"] = fmt_size
 templates.env.filters["fromjson"] = lambda s: json.loads(s) if s else {}
 templates.env.filters["phone"] = sms.format_phone
 templates.env.filters["todate"] = lambda s: datetime.fromisoformat(s).date()
+
+
+def fmt_money(v) -> str:
+    """'1200' → '1,200', '1200.5' → '1,200.50' (못 읽으면 그대로)."""
+    try:
+        n = float(str(v).replace(",", "").replace("£", ""))
+    except (TypeError, ValueError):
+        return str(v or "")
+    return f"{n:,.0f}" if n == int(n) else f"{n:,.2f}"
+
+
+templates.env.filters["money"] = fmt_money
 templates.env.globals.update(
     BRAND=C.BRAND,
     COMPANY=C.COMPANY,
@@ -116,6 +128,12 @@ templates.env.globals.update(
     CONVERSATION_CHANNELS=C.CONVERSATION_CHANNELS,
     AUDIT_ACTIONS=C.AUDIT_ACTIONS,
     HOUSE_LABELS=C.HOUSE_LABELS,
+    VISIT_KINDS=C.VISIT_KINDS,
+    vlabel=C.visit_label,
+    VISIT_STATUS=C.VISIT_STATUS,
+    VARIATION_STATUS=C.VARIATION_STATUS,
+    PAYMENT_KINDS=C.PAYMENT_KINDS,
+    PAYMENT_STATUS=C.PAYMENT_STATUS,
     DIRECT_UPLOAD=storage.direct,
     SMS_ENABLED=sms.SMS_ENABLED,
     # 서버리스에서 DB가 연결되지 않으면 데이터가 사라지므로 화면에 경고를 띄운다
@@ -143,6 +161,17 @@ def render(request: Request, name: str, user=None, status_code: int = 200, **ctx
         db = getattr(request.state, "db", None)
         if db is not None:
             ctx.update(office_nav_counts(db))
+    if user is not None and "SOV" not in ctx:          # 현장조사 액세서리 선택지 (관리자 설정)
+        db = getattr(request.state, "db", None)
+        if db is not None:
+            from . import survey_options
+            ctx["SOV"] = survey_options.view(ctx.get("survey_opts") or survey_options.load(db), lang)
+    if name == "me.html" and user is not None and "licences" not in ctx:     # 내 정보: 내 자격증
+        db = getattr(request.state, "db", None)
+        if db is not None:
+            ctx["licences"] = user_licences(db, user["id"])
+            ctx.setdefault("C", C)
+            ctx["fgas_ok"] = fgas_approved(user)
     if user is not None and "unread_total" not in ctx:
         db = getattr(request.state, "db", None)
         if db is not None:
@@ -179,7 +208,7 @@ def office_nav_counts(conn) -> dict:
                   if overlaps(a["start_time"], a["end_time"], b["start_time"], b["end_time"]))
     fgas = conn.execute("SELECT fgas_expiry FROM users WHERE role = 'installer' AND active = 1").fetchall()
     return {"pending_total": pending_count(conn),
-            "project_total": conn.execute("SELECT COUNT(*) AS n FROM houses WHERE stage < 9").fetchone()["n"],
+            "project_total": conn.execute("SELECT COUNT(*) AS n FROM houses WHERE stage < 6").fetchone()["n"],
             "fgas_alert": any(fgas_state(r["fgas_expiry"]) in ("expired", "soon") for r in fgas),
             "clash_total": clashes}
 
@@ -202,15 +231,32 @@ async def _login_required(request: Request, exc: LoginRequired):
     return redirect(f"/login?next={request.url.path}")
 
 
+def _session_user(request: Request):
+    """오류 화면에서도 메뉴·'오늘' 버튼을 맞게 보여주려고 로그인한 사용자를 찾는다 (없으면 None)."""
+    try:
+        uid = request.session.get("user_id")
+    except AssertionError:          # 세션 미들웨어 밖
+        return None
+    # 요청 중에 연 연결은 오류 처리 전에 이미 닫혔을 수 있으므로 render 가 쓰지 않게 한다
+    request.state.db = None
+    if not uid:
+        return None
+    conn = connect()
+    try:
+        return conn.execute("SELECT * FROM users WHERE id = ? AND active = 1", (uid,)).fetchone()
+    finally:
+        conn.close()
+
+
 @app.exception_handler(Forbidden)
 async def _forbidden(request: Request, exc: Forbidden):
-    return render(request, "error.html", message="권한이 없습니다.", status_code=403)
+    return render(request, "error.html", user=_session_user(request), message="권한이 없습니다.", status_code=403)
 
 
 @app.exception_handler(HTTPException)
 async def _http_error(request: Request, exc: HTTPException):
     message = {404: "페이지를 찾을 수 없습니다."}.get(exc.status_code, exc.detail or "오류가 발생했습니다.")
-    return render(request, "error.html", message=message, status_code=exc.status_code)
+    return render(request, "error.html", user=_session_user(request), message=message, status_code=exc.status_code)
 
 
 # ---------- 공통 조회/권한 ----------
@@ -426,7 +472,7 @@ def index(request: Request):
         u = conn.execute("SELECT role FROM users WHERE id = ?", (request.session["user_id"],)).fetchone()
     finally:
         conn.close()
-    return redirect("/approvals" if u and u["role"] in C.OFFICE_ROLES else "/today")
+    return redirect("/approvals" if u and u["role"] in C.OFFICE_ROLES else "/houses")
 
 
 @app.get("/login")
@@ -547,6 +593,12 @@ def logout(request: Request):
     request.session.clear()
     request.session["lang"] = lang
     return redirect("/login")
+
+
+@app.get("/guide")
+def guide_page(request: Request, user=Depends(current_user)):
+    from .status_guide import groups
+    return render(request, "guide.html", user=user, status_groups=groups(is_office(user)))
 
 
 @app.get("/me")
@@ -697,8 +749,16 @@ def house_list(request: Request, user=Depends(current_user), conn=Depends(get_db
     hold_count = conn.execute(f"SELECT COUNT(*) AS n FROM houses h WHERE {member_sql} AND on_hold = 1",
                               member_params).fetchone()["n"]
     filtered = bool(f["q"] or f["stage"] or f["hold"])
+    extra = {}
+    if is_office(user):         # 프로젝트마다 확인할 일 개수
+        extra["pending_by_house"] = {}
+        for i in pending_items(conn):
+            extra["pending_by_house"][i["house_id"]] = extra["pending_by_house"].get(i["house_id"], 0) + 1
+    else:                       # 설치업자: 오늘 할 일을 목록 위에
+        from .visits import today_context
+        extra = today_context(conn, user)
     return render(request, "houses.html", user=user, houses=houses, counts=counts, total=sum(counts.values()),
-                  hold_count=hold_count, f=f, sorts=SORTS, filtered=filtered)
+                  hold_count=hold_count, f=f, sorts=SORTS, filtered=filtered, **extra)
 
 
 @app.get("/houses/new")
@@ -794,14 +854,16 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
 
     type_counts = {t: sum(1 for e in entries if e["type"] == t) for t in types}
     # 설치업자는 이제 구조화된 현장조사를 쓰므로, 예전 '기록' 입력란은 회사에만 보여준다(이미 쓴 기록은 그대로 보임)
-    writable = [t for t in C.ENTRY_TYPES if can_write(user, t)] if is_office(user) else []
+    # '새 기록 작성'은 없앴다. 이미 쓴 기록(현장 메모·견적·집주인 대화)은 아래 목록에 그대로 보인다.
+    writable = []
     members = conn.execute(
         """SELECT u.id, u.name, u.phone_e164, m.added_at FROM house_members m JOIN users u ON u.id = m.user_id
            WHERE m.house_id = ? ORDER BY u.name""", (house_id,)).fetchall()
     candidates = conn.execute(
-        """SELECT id, name FROM users WHERE role = 'installer' AND active = 1
+        """SELECT * FROM users WHERE role = 'installer' AND active = 1
            AND id NOT IN (SELECT user_id FROM house_members WHERE house_id = ?) ORDER BY name""", (house_id,)).fetchall() \
         if is_office(user) else []
+    candidates = [{"id": u["id"], "name": u["name"], "fgas_ok": fgas_approved(u)} for u in candidates]
     return render(
         request, "house.html", user=user, house=house, timeline=timeline, files=files, history=history,
         tab=tab, q=q, types=types, type_counts=type_counts, writable=writable,
@@ -835,9 +897,32 @@ def house_detail(request: Request, house_id: int, tab: str = "all", q: str = "",
         VISIT_KINDS=C.VISIT_KINDS, VISIT_STATUS=C.VISIT_STATUS, VARIATION_STATUS=C.VARIATION_STATUS,
         all_installers=conn.execute("SELECT id, name FROM users WHERE role = 'installer' AND active = 1 ORDER BY name").fetchall()
         if is_office(user) else [],
-        SURVEY_STATUS=C.SURVEY_STATUS, C_REQUIRED=C.REQUIRED_DOCS,
+        SURVEY_STATUS=C.SURVEY_STATUS, C_REQUIRED=C.REQUIRED_DOCS, C=C,
         can_edit=lambda e: can_edit(user, e),
+        next=next_step(conn, house, user),
+        pay_sum=pay_summary(conn, house) if is_office(user) else None,
+        visit_options=_visit_options(conn, house_id),
+        pending=[i for i in pending_items(conn) if i["house_id"] == house_id] if is_office(user) else [],
     )
+
+
+def _visit_options(conn, house_id: int) -> dict:
+    """방문마다 설치업자가 보낸 날짜 후보."""
+    out: dict = {}
+    for r in conn.execute("""SELECT o.visit_id, o.date FROM visit_date_options o JOIN visits v ON v.id = o.visit_id
+                             WHERE v.house_id = ? AND v.status = 'options' ORDER BY o.date""", (house_id,)):
+        out.setdefault(r["visit_id"], []).append(r["date"])
+    return out
+
+
+def advance_stage(conn, house_id: int, target: int, actor_id: int, only_from: tuple = ()) -> bool:
+    """자동 단계 이동: 지금 단계가 target보다 앞일 때만 (only_from을 주면 그 단계일 때만) 옮기고 기록한다. 뒤로는 절대 안 간다."""
+    row = conn.execute("SELECT stage FROM houses WHERE id = ?", (house_id,)).fetchone()
+    if not row or row["stage"] >= target or (only_from and row["stage"] not in only_from):
+        return False
+    conn.execute("UPDATE houses SET stage = ?, updated_by = ?, updated_at = ? WHERE id = ?", (target, actor_id, now(), house_id))
+    audit(conn, house_id=house_id, actor_id=actor_id, action="stage", detail=f"{row['stage']} → {target}")
+    return True
 
 
 @app.get("/houses/{house_id}/edit")
@@ -864,27 +949,63 @@ async def house_edit(request: Request, house_id: int, user=Depends(office_user),
             )
             audit(conn, house_id=house_id, actor_id=user["id"], action="house_edit",
                   detail=",".join(changed), snapshot=before)
-        flash(request, "집 정보가 수정되었습니다.")
+        flash(request, "프로젝트 정보를 수정했습니다.")
     return redirect(f"/houses/{house_id}")
 
 
-@app.post("/houses/{house_id}/stage")
-async def house_stage(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
-    """단계 이동은 회사(관리자·매니저)만 한다."""
+# 단계는 진행 상황에 따라 저절로 바뀐다 (현장조사 예약·시작 → 2, 작업 범위 → 3, 확정 → 4, 첫 시공 날짜 → 5,
+# 시공 도착·보고 → 6). 시공은 몇 차까지 할지 모르므로 '시공 완료 확인'(→ 7 인수인계)과 '인수인계 완료'(→ 8 완료)만 버튼으로 둔다.
+
+@app.post("/houses/{house_id}/install-done")
+def house_install_done(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
+    """시공이 다 끝났음을 회사가 확인 → 인수인계. 끝난 시공이 있고, 아직 끝나지 않은 시공 방문이 없어야 한다."""
     house = get_house_or_404(conn, house_id, user)
-    form = await request.form()
-    raw = form_str(form, "stage", 3)
-    note = form_str(form, "note", 500)
-    if not raw.isdigit() or int(raw) not in C.STAGES:
-        raise HTTPException(400, "알 수 없는 단계입니다.")
-    new = int(raw)
-    if new != house["stage"]:
-        with conn:
-            conn.execute("UPDATE houses SET stage = ?, updated_by = ?, updated_at = ? WHERE id = ?",
-                         (new, user["id"], now(), house_id))
-            audit(conn, house_id=house_id, actor_id=user["id"], action="stage",
-                  detail=f"{house['stage']} → {new}", snapshot={"note": note} if note else None)
-        flash(request, "{n}단계 '{stage}'(으)로 옮겼습니다.", n=new, stage=C.STAGES[new])
+    done = conn.execute("SELECT 1 FROM visits WHERE house_id = ? AND kind = 'install' AND status = 'done'", (house_id,)).fetchone()
+    open_ = conn.execute("""SELECT 1 FROM visits WHERE house_id = ? AND kind = 'install'
+                            AND status IN ('requested', 'options', 'proposed', 'confirmed')""", (house_id,)).fetchone()
+    if not done or open_ or house["stage"] != C.INSTALL_STAGE:
+        flash(request, "끝나지 않은 시공 방문이 있거나 작업 끝 보고가 없어 시공 완료를 확인할 수 없습니다.", "error")
+        return redirect(f"/houses/{house_id}")
+    with conn:
+        advance_stage(conn, house_id, C.HANDOVER_STAGE, user["id"])
+    flash(request, "시공 완료를 확인했습니다. 인수인계 단계입니다.")
+    return redirect(f"/houses/{house_id}")
+
+
+@app.post("/houses/{house_id}/stage-back")
+async def house_stage_back(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
+    """잘못 누른 '시공 완료 확인'(인수인계 → 시공)이나 '인수인계 완료'(완료 → 인수인계)를 한 단계 되돌린다. 사유 필수, 기록에 남음."""
+    house = get_house_or_404(conn, house_id, user)
+    note = form_str(await request.form(), "note", 500)
+    back_to = {C.HANDOVER_STAGE: C.INSTALL_STAGE, C.DONE_STAGE: C.HANDOVER_STAGE}.get(house["stage"])
+    if not back_to:
+        flash(request, "되돌릴 수 있는 단계가 아닙니다.", "error")
+        return redirect(f"/houses/{house_id}")
+    if not note:
+        flash(request, "되돌리는 사유를 적어 주세요. 작업 기록에 남습니다.", "error")
+        return redirect(f"/houses/{house_id}#stage-back")
+    with conn:
+        conn.execute("UPDATE houses SET stage = ?, updated_by = ?, updated_at = ? WHERE id = ?", (back_to, user["id"], now(), house_id))
+        audit(conn, house_id=house_id, actor_id=user["id"], action="stage", detail=f"{house['stage']} → {back_to}", snapshot={"note": note})
+    flash(request, "{n}단계 '{stage}'(으)로 되돌렸습니다.", n=back_to, stage=C.STAGES[back_to])
+    return redirect(f"/houses/{house_id}")
+
+
+@app.post("/houses/{house_id}/handover-done")
+def house_handover_done(request: Request, house_id: int, user=Depends(office_user), conn=Depends(get_db)):
+    """고객 인수인계가 끝났음을 회사가 확인 → 9 완료."""
+    house = get_house_or_404(conn, house_id, user)
+    if house["stage"] != C.HANDOVER_STAGE:
+        flash(request, "인수인계 단계에서만 완료할 수 있습니다.", "error")
+        return redirect(f"/houses/{house_id}")
+    from .payments import gate_block
+    msg = gate_block(conn, house_id, "balance_before_complete")
+    if msg:
+        flash(request, msg, "error")
+        return redirect(f"/houses/{house_id}#payments")
+    with conn:
+        advance_stage(conn, house_id, C.DONE_STAGE, user["id"])
+    flash(request, "인수인계를 마치고 프로젝트를 완료했습니다.")
     return redirect(f"/houses/{house_id}")
 
 
@@ -1090,15 +1211,34 @@ def file_download(file_id: int, download: int = 0, user=Depends(current_user), c
 # ---------- 사용자 관리 (관리자) ----------
 
 @app.get("/users")
-def users_page(request: Request, user=Depends(office_user), conn=Depends(get_db)):
+def users_home(request: Request, user=Depends(office_user)):
+    """사용자 관리 → 마지막에 보던 하위 화면 (계정 작업 뒤 돌아올 곳)."""
+    return redirect(request.session.get("users_tab", "/users/installers"))
+
+
+@app.get("/users/installers")
+def users_installers(request: Request, user=Depends(office_user), conn=Depends(get_db)):
+    return users_page(request, user, conn, "installers")
+
+
+@app.get("/users/staff")
+def users_staff(request: Request, user=Depends(office_user), conn=Depends(get_db)):
+    return users_page(request, user, conn, "staff")
+
+
+def users_page(request: Request, user, conn, section: str):
     from .approvals import fgas_state
-    users = conn.execute("SELECT * FROM users ORDER BY role DESC, created_at").fetchall()
+    request.session["users_tab"] = f"/users/{section}"
+    users = conn.execute("SELECT * FROM users WHERE deleted_at IS NULL ORDER BY role DESC, created_at").fetchall()
     projects = {r["user_id"]: r["n"] for r in conn.execute(
         """SELECT m.user_id, COUNT(*) AS n FROM house_members m JOIN houses h ON h.id = m.house_id
-           WHERE h.stage < 9 GROUP BY m.user_id""")}
+           WHERE h.stage < 6 GROUP BY m.user_id""")}
     return render(request, "users.html", user=user, users=users, manageable=C.MANAGEABLE[user["role"]],
                   reset_link=request.session.pop("reset_link", None),
-                  projects=projects, fgas={u["id"]: fgas_state(u["fgas_expiry"]) for u in users})
+                  projects=projects, fgas={u["id"]: fgas_state(u["fgas_expiry"]) for u in users},
+                  licences={u["id"]: user_licences(conn, u["id"]) for u in users if u["role"] == "installer"},
+                  fgas_ok={u["id"]: fgas_approved(u) for u in users}, C=C, section=section,
+                  attendance={u["id"]: installer_summary(conn, u["id"]) for u in users if u["role"] == "installer"} if section == "installers" else {})
 
 
 @app.get("/invites")
@@ -1145,12 +1285,39 @@ async def invite_by_phone(request: Request, user=Depends(office_user), conn=Depe
     return redirect("/invites")
 
 
+@app.post("/users/{user_id}/delete")
+def user_delete(request: Request, user_id: int, user=Depends(admin_user), conn=Depends(get_db)):
+    """관리자만: 계정 삭제. 작업 기록·현장 기록이 이 사람을 가리키므로 행은 남기고, 목록에서 빼고 다시는 로그인할 수 없게 한다.
+    이메일·휴대폰 번호는 비워서 같은 사람을 나중에 다시 초대할 수 있게 한다. 앞으로 잡힌 방문이 있으면 먼저 다른 사람에게 넘겨야 한다."""
+    if user_id == user["id"]:
+        flash(request, "본인 계정은 삭제할 수 없습니다.", "error")
+        return redirect("/users")
+    target = conn.execute("SELECT * FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,)).fetchone()
+    if not target:
+        raise HTTPException(404)
+    upcoming = conn.execute("""SELECT COUNT(*) AS n FROM visits WHERE installer_id = ? AND status IN ('requested', 'options', 'proposed', 'confirmed')
+                               AND (date IS NULL OR date >= ?)""", (user_id, datetime.now(LONDON).date().isoformat())).fetchone()["n"]
+    if upcoming:
+        flash(request, "{name}님에게 앞으로 잡힌 방문이 {n}건 있습니다. 일정 관리에서 다른 설치업자로 바꾸거나 취소한 뒤 삭제하세요.", "error",
+              name=target["name"], n=upcoming)
+        return redirect("/users")
+    ts = now()
+    with conn:
+        conn.execute("""UPDATE users SET active = 0, email = NULL, phone = NULL, phone_e164 = NULL, password_hash = '!',
+                        deleted_at = ?, deleted_by = ? WHERE id = ?""", (ts, user["id"], user_id))
+        for m in conn.execute("SELECT house_id FROM house_members WHERE user_id = ?", (user_id,)).fetchall():
+            audit(conn, house_id=m["house_id"], actor_id=user["id"], action="member_remove", detail=target["name"])
+        conn.execute("DELETE FROM house_members WHERE user_id = ?", (user_id,))
+    flash(request, "{name}님의 계정을 삭제했습니다. 지금까지의 기록은 그대로 남습니다.", name=target["name"])
+    return redirect("/users")
+
+
 @app.post("/users/{user_id}/toggle")
 def user_toggle(request: Request, user_id: int, user=Depends(office_user), conn=Depends(get_db)):
     if user_id == user["id"]:
         flash(request, "본인 계정은 비활성화할 수 없습니다.", "error")
         return redirect("/users")
-    target = conn.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
+    target = conn.execute("SELECT role FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,)).fetchone()   # 삭제한 계정은 되살리지 않는다
     if not target:
         raise HTTPException(404)
     if target["role"] not in C.MANAGEABLE[user["role"]]:  # 매니저는 관리자 계정을 건드릴 수 없다
@@ -1196,6 +1363,12 @@ from .documents import router as documents_router  # noqa: E402
 from .visits import router as visits_router  # noqa: E402
 from .approvals import router as approvals_router  # noqa: E402
 from .account import router as account_router  # noqa: E402
+from .licences import router as licences_router, fgas_approved, user_licences  # noqa: E402
+from .survey_options import router as survey_options_router  # noqa: E402
+from .payments import router as payments_router, summary as pay_summary  # noqa: E402
+from .attendance import router as attendance_router, installer_summary, visit_attendance  # noqa: E402
+from .nextstep import next_step  # noqa: E402
+from .approvals import pending_items  # noqa: E402
 
-for _r in (survey_router, scope_router, documents_router, visits_router, approvals_router, account_router):
+for _r in (survey_router, scope_router, documents_router, visits_router, approvals_router, account_router, licences_router, survey_options_router, payments_router, attendance_router):
     app.include_router(_r)

@@ -21,7 +21,7 @@ from .storage import THUMB_MIMES, ensure_thumb
 
 router = APIRouter()
 
-ACC_KEYS = ("grille", "plenum", "hatch")
+from . import survey_options as SO   # 액세서리 선택지는 관리자 설정에서 온다
 
 
 # ---------- 조회 ----------
@@ -72,39 +72,51 @@ def loads(s) -> dict:
     return json.loads(s) if s else {}
 
 
-def base_acc(defaults: dict, indoor_type) -> dict:
+def base_acc(defaults: dict, indoor_type, opts: dict) -> dict:
     """이 방에서 따로 고치지 않았을 때의 값.
     컨트롤·LCD 색상은 '모든 방에 적용' 값을 모든 방이 따르고, 그릴·플레넘·점검구는 실내기 형태마다 다르므로
     같은 형태의 방에서 '모든 방에 적용'한 값만 따른다 (덕트형은 벽걸이 방의 '해당 없음'을 물려받지 않음)."""
     itype = indoor_type or "wall"
-    type_defaults = C.ACC_DEFAULTS.get(itype, {})
     by_type = defaults.get("by_type", {}).get(itype, {})
     return {
         "controls": defaults.get("controls", []),
         "lcd_colour": defaults.get("lcd_colour"),
-        **{k: by_type.get(k, type_defaults.get(k)) for k in ACC_KEYS},
+        **{it["key"]: by_type.get(it["key"], (it.get("defaults") or {}).get(itype)) for it in SO.active_items(opts)},
     }
 
 
-def resolve_acc(defaults: dict, room) -> dict:
+def resolve_acc(defaults: dict, room, opts: dict) -> dict:
     """방의 액세서리 값 = 이 방에서 고친 값 → 기본값(모든 방에 적용 / 실내기 형태별) 순서."""
     own = loads(room["acc"])
-    out = base_acc(defaults, room["indoor_type"])
-    out.update({k: v for k, v in own.items() if k in (*out, "extra")})
+    out = base_acc(defaults, room["indoor_type"], opts)
+    known = {it["key"] for it in opts["items"]}            # 숨긴 항목에 예전에 고른 값도 남겨 보여준다
+    out.update({k: v for k, v in own.items() if k in (*out, "extra") or k in known})
     out.setdefault("extra", None)
     return out
 
 
-def room_problems(room, acc: dict) -> list[str]:
+def survey_is_empty(conn, survey) -> bool:
+    """방 형태·용량을 하나도 고르지 않았고 사진도 없는 조사 (검토하거나 작업 범위로 만들 수 없다)."""
+    if conn.execute("SELECT 1 FROM survey_rooms WHERE survey_id = ? AND (COALESCE(indoor_type, '') <> '' OR COALESCE(kw, '') <> '')",
+                    (survey["id"],)).fetchone():
+        return False
+    return not conn.execute(
+        """SELECT 1 FROM media WHERE deleted_at IS NULL AND (
+             (owner_type = 'room' AND owner_id IN (SELECT id FROM survey_rooms WHERE survey_id = ?))
+          OR (owner_type = 'odu' AND owner_id IN (SELECT id FROM survey_odus WHERE survey_id = ?))
+          OR (owner_type = 'board' AND owner_id = ?))""", (survey["id"], survey["id"], survey["id"])).fetchone()
+
+
+def room_problems(room, acc: dict, opts: dict) -> list[str]:
     """회사로 보내기 전에 채워야 할 것 (번역 키)."""
     out = []
     if not room["indoor_type"]:
         out.append("실내기 형태를 고르세요.")
     if not room["kw"]:
         out.append("대략 용량을 고르세요.")
-    for k in ACC_KEYS:
-        if acc.get(k) is None:
-            out.append("그릴·플레넘·점검구를 모두 고르세요.")
+    for it in SO.active_items(opts):
+        if acc.get(it["key"]) is None:
+            out.append("액세서리 항목을 모두 고르세요.")
             break
     return out
 
@@ -173,14 +185,15 @@ def survey_context(conn, house, survey):
     rooms = list_rooms(conn, survey["id"])
     odus = list_odus(conn, survey["id"])
     defaults = loads(survey["defaults"])
-    accs = {r["id"]: resolve_acc(defaults, r) for r in rooms}
+    opts = SO.load(conn)
+    accs = {r["id"]: resolve_acc(defaults, r, opts) for r in rooms}
     return dict(
-        house=house, survey=survey, rooms=rooms, odus=odus, defaults=defaults, accs=accs,
+        house=house, survey=survey, rooms=rooms, odus=odus, defaults=defaults, accs=accs, survey_opts=opts,
         common=loads(survey["common"]),
         room_media=media_for(conn, "room", [r["id"] for r in rooms]),
         odu_media=media_for(conn, "odu", [o["id"] for o in odus]),
         board_media=media_for(conn, "board", [survey["id"]]).get(survey["id"], []),
-        problems={r["id"]: room_problems(r, accs[r["id"]]) for r in rooms},
+        problems={r["id"]: room_problems(r, accs[r["id"]], opts) for r in rooms},
         outdoor_issues=outdoor_problems(odus, loads(survey["common"])),
     )
 
@@ -200,8 +213,8 @@ def survey_home(request: Request, house_id: int, user=Depends(current_user), con
     if not survey:
         return render(request, "survey_start.html", user=user, house=house)
     if is_office(user) and request.query_params.get("edit") != "1":
-        return page(request, user, "survey_review.html", conn, house, survey,
-                    scopes=conn.execute("SELECT version, created_at FROM scope_versions WHERE house_id = ? ORDER BY version",
+        return page(request, user, "survey_review.html", conn, house, survey, empty=survey_is_empty(conn, survey),
+                    scopes=conn.execute("SELECT version, created_at, locked_at FROM scope_versions WHERE house_id = ? ORDER BY version",
                                         (house_id,)).fetchall())
     return page(request, user, "survey_overview.html", conn, house, survey)
 
@@ -220,6 +233,7 @@ def survey_start(request: Request, house_id: int, user=Depends(current_user), co
                              VALUES (?, 1, ?, ?, ?)""", (sid, translate(lang, "방 {n}", n=1), ts, ts))
         conn.execute("INSERT INTO survey_odus (survey_id, sort, created_at) VALUES (?, 1, ?)", (sid, ts))
         audit(conn, house_id=house_id, actor_id=user["id"], action="survey_start")
+
     return redirect(f"/houses/{house_id}/survey/rooms/{rid}")
 
 
@@ -271,8 +285,12 @@ async def room_save(request: Request, house_id: int, room_id: int, user=Depends(
                      (name, itype if itype in C.INDOOR_TYPES else room["indoor_type"],
                       kw if kw in C.KW_OPTIONS else room["kw"], form_str(form, "memo", 4000), now(), room_id))
         touch(conn, survey["id"], user)
+    before = len(media_for(conn, "room", [room_id]).get(room_id, []))
     if not await save_photos(request, conn, form, house_id, "room", room_id, user):
         return redirect(f"/houses/{house_id}/survey/rooms/{room_id}")
+    if room["photo_request"] and not is_office(user) and len(media_for(conn, "room", [room_id]).get(room_id, [])) > before:
+        with conn:
+            conn.execute("UPDATE survey_rooms SET photo_request = NULL WHERE id = ?", (room_id,))
     action = form_str(form, "action", 20)
     if action == "next":
         return redirect(f"/houses/{house_id}/survey/rooms/{room_id}/acc")
@@ -314,13 +332,14 @@ async def acc_save(request: Request, house_id: int, room_id: int, user=Depends(c
     if not can_edit(user, survey):
         raise Forbidden()
     form = await request.form()
-    values = {"controls": [c for c in form.getlist("controls") if c in C.CONTROLS]}
+    opts = SO.load(conn)
+    values = {"controls": [c for c in form.getlist("controls") if c in SO.active_keys(opts, "controls")]}
     values["lcd_colour"] = form_str(form, "lcd_colour", 10) if "lcd" in values["controls"] else None
-    if values["lcd_colour"] not in (None, *C.LCD_COLOURS):
+    if values["lcd_colour"] not in (None, *SO.active_keys(opts, "lcd_colours")):
         values["lcd_colour"] = None
-    for k, choices in (("grille", C.INCLUDE_CHOICES), ("plenum", C.INCLUDE_CHOICES), ("hatch", C.HATCH_CHOICES)):
-        v = form_str(form, k, 10)
-        values[k] = v if v in choices else None
+    for it in SO.active_items(opts):
+        v = form_str(form, it["key"], 10)
+        values[it["key"]] = v if v in SO.ANSWERS[it["answers"]] else None
     extra = form_str(form, "extra", 4000)
     with conn:
         if form_str(form, "action", 20) == "apply_all":
@@ -328,13 +347,13 @@ async def acc_save(request: Request, house_id: int, room_id: int, user=Depends(c
             # 그릴·플레넘·점검구는 이 방과 같은 실내기 형태의 기본값으로만 저장한다.
             defaults = loads(survey["defaults"])
             defaults["controls"], defaults["lcd_colour"] = values["controls"], values["lcd_colour"]
-            defaults.setdefault("by_type", {})[room["indoor_type"] or "wall"] = {k: values[k] for k in ACC_KEYS}
+            defaults.setdefault("by_type", {})[room["indoor_type"] or "wall"] = {it["key"]: values[it["key"]] for it in SO.active_items(opts)}
             conn.execute("UPDATE surveys SET defaults = ? WHERE id = ?", (json.dumps(defaults), survey["id"]))
             conn.execute("UPDATE survey_rooms SET acc = ?, updated_at = ? WHERE id = ?",
                          (json.dumps({"extra": extra} if extra else {}), now(), room_id))
             flash(request, "모든 방에 적용했습니다. 다른 방은 다른 것만 바꾸면 됩니다.")
         else:
-            base = base_acc(loads(survey["defaults"]), room["indoor_type"])
+            base = base_acc(loads(survey["defaults"]), room["indoor_type"], opts)
             own = {k: v for k, v in values.items() if v != base.get(k)}   # 기본값과 다른 것만 이 방에 따로 저장
             if extra:
                 own["extra"] = extra
@@ -385,8 +404,8 @@ async def outdoor_save(request: Request, house_id: int, user=Depends(current_use
         touch(conn, survey["id"], user)
     if form_str(form, "action", 20) == "autosave":   # 사진을 올리기 직전 자동 저장 (화면 이동 없음)
         return Response(status_code=204)
-    if form_str(form, "action", 20) != "submit":
-        flash(request, "저장했습니다. 나중에 이어서 할 수 있습니다.")
+    if form_str(form, "action", 20) != "submit" or is_office(user):
+        flash(request, "저장했습니다. 나중에 이어서 할 수 있습니다." if not is_office(user) else "저장했습니다.")
         return redirect(f"/houses/{house_id}/survey")
     # 회사로 보내기: 빠진 것이 없는지 확인
     ctx = survey_context(conn, house, get_survey(conn, house_id))
@@ -402,6 +421,9 @@ async def outdoor_save(request: Request, house_id: int, user=Depends(current_use
         n_photos = sum(len(v) for v in ctx["room_media"].values()) + sum(len(v) for v in ctx["odu_media"].values()) + len(ctx["board_media"])
         audit(conn, house_id=house_id, actor_id=user["id"], action="survey_submit",
               detail=json.dumps({"rooms": len(ctx["rooms"]), "photos": n_photos}))
+        # 현장조사 방문은 '오늘 작업 끝' 대신 제출로 끝난다 (남아 있으면 도착·취소 버튼이 계속 보임)
+        conn.execute("""UPDATE visits SET status = 'done', updated_at = ? WHERE house_id = ? AND kind = 'survey'
+                        AND status IN ('confirmed', 'proposed')""", (now(), house_id))
     flash(request, "현장조사를 회사로 보냈습니다.")
     return redirect(f"/houses/{house_id}/survey")
 
@@ -465,7 +487,10 @@ async def photo_request(request: Request, house_id: int, room_id: int, user=Depe
         conn.execute("UPDATE survey_rooms SET photo_request = ?, updated_at = ? WHERE id = ?", (text or None, now(), room_id))
         if text:
             audit(conn, house_id=house_id, actor_id=user["id"], action="survey_photo_request", detail=f"{room['name']}: {text}")
-    flash(request, "설치업자에게 추가 사진을 요청했습니다." if text else "추가 사진 요청을 지웠습니다.")
+            if survey["status"] != "draft":
+                conn.execute("UPDATE surveys SET status = 'draft', reviewed_by = NULL, reviewed_at = NULL WHERE id = ?", (survey["id"],))
+                audit(conn, house_id=house_id, actor_id=user["id"], action="survey_reopen")
+    flash(request, "설치업자에게 추가 사진을 요청했습니다. 설치업자가 올린 뒤 다시 보내면 확인할 일에 올라옵니다." if text else "추가 사진 요청을 지웠습니다.")
     return redirect(f"/houses/{house_id}/survey#room-{room_id}")
 
 
@@ -474,6 +499,9 @@ def survey_reviewed(request: Request, house_id: int, user=Depends(office_user), 
     """작업 범위를 만들지 않고 '검토 완료'만 표시 (승인 대기에서 빠진다). 설치업자는 더 이상 고칠 수 없다."""
     get_house_or_404(conn, house_id, user)
     survey = survey_or_404(conn, house_id)
+    if survey_is_empty(conn, survey):
+        flash(request, "조사 내용이 비어 있습니다. 직접 고치거나 설치업자에게 작성을 맡기세요.", "error")
+        return redirect(f"/houses/{house_id}/survey")
     if survey["status"] != "reviewed":
         with conn:
             conn.execute("UPDATE surveys SET status = 'reviewed', reviewed_by = ?, reviewed_at = ? WHERE id = ?",
@@ -502,6 +530,9 @@ def scope_from_survey(request: Request, house_id: int, user=Depends(office_user)
     survey = survey_or_404(conn, house_id)
     if conn.execute("SELECT 1 FROM scope_versions WHERE house_id = ? AND locked_at IS NOT NULL", (house_id,)).fetchone():
         raise HTTPException(400, "확정된 작업 범위는 변경 요청(VO)으로만 바꿀 수 있습니다.")
+    if survey_is_empty(conn, survey):
+        flash(request, "조사 내용이 비어 있습니다. 직접 고치거나 설치업자에게 작성을 맡기세요.", "error")
+        return redirect(f"/houses/{house_id}/survey")
     ctx = survey_context(conn, house, survey)
     data = {
         "rooms": [{"name": r["name"], "indoor_type": r["indoor_type"], "kw": r["kw"], "memo": r["memo"] or "",
@@ -518,9 +549,8 @@ def scope_from_survey(request: Request, house_id: int, user=Depends(office_user)
         conn.execute("UPDATE surveys SET status = 'reviewed', reviewed_by = ?, reviewed_at = ? WHERE id = ?",
                      (user["id"], ts, survey["id"]))
         audit(conn, house_id=house_id, actor_id=user["id"], action="scope_create", detail=str(last + 1))
-        if house["stage"] < 3:
-            conn.execute("UPDATE houses SET stage = 3, updated_by = ?, updated_at = ? WHERE id = ?", (user["id"], ts, house_id))
-            audit(conn, house_id=house_id, actor_id=user["id"], action="stage", detail=f"{house['stage']} → 3")
+        from .main import advance_stage
+        advance_stage(conn, house_id, C.QUOTE_STAGE, user["id"])
     flash(request, "작업 범위 v{n}을 만들었습니다.", n=last + 1)
     return redirect(f"/houses/{house_id}/scope/{last + 1}")
 

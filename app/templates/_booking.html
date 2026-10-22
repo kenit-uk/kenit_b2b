@@ -1,0 +1,50 @@
+{# 방문 예약 양식 — 일정 화면과 프로젝트 화면에서 같이 쓴다.
+   house 를 주면 그 프로젝트로 고정(프로젝트 화면), 아니면 프로젝트를 고른다(일정 화면). #}
+{% macro booking_form(installers, form={}, warnings=[], houses=[], house=None, house_id=None, origin='project') %}
+{% set blocked = warnings|selectattr('level', 'equalto', 'block')|list %}
+{% if warnings %}
+<div class="warn-box">
+  {% for w in warnings %}<p class="{{ 'block' if w.level == 'block' else '' }}">⚠ {{ _(w.key, **(w.args or {})) }}</p>{% endfor %}
+  {% if not blocked %}<p class="small">{{ _('설치업자나 날짜를 바꾸거나, 사유를 적고 "그대로 예약"을 누르세요. 기록에 남습니다.') }}</p>{% endif %}
+</div>
+{% endif %}
+<form method="post" action="/visits" class="stack booking-form">
+  {% if house %}
+    <input type="hidden" name="house_id" value="{{ house.id }}"><input type="hidden" name="from" value="{{ origin }}">
+  {% endif %}
+  <div class="grid-3">
+    {% if not house %}
+    <label>{{ _('프로젝트') }}<select name="house_id" required>
+      {% for h in houses %}<option value="{{ h.id }}" {% if (form.house_id or house_id)|string == h.id|string %}selected{% endif %}>{{ h.ref_no }} · {{ h.address }}</option>{% endfor %}
+    </select></label>
+    {% endif %}
+    <label>{{ _('방문 종류') }}<select name="kind">{% for k, label in C.VISIT_KINDS.items() %}<option value="{{ k }}" {% if form.kind == k %}selected{% endif %}>{{ _(label) }}</option>{% endfor %}</select></label>
+    <label>{{ _('설치업자') }}<select name="installer_id">{% for u in installers %}<option value="{{ u.id }}" {% if form.installer_id == u.id|string %}selected{% endif %}>{{ u.name }}</option>{% endfor %}</select></label>
+  </div>
+  <div class="choices">
+    {% for k, label in (('confirmed', '확정으로 예약'), ('proposed', '설치업자에게 가능 여부 묻기'), ('requested', '설치업자가 날짜 고르기')) %}
+    <label class="choice"><input type="radio" name="mode" value="{{ k }}" {% if (form.mode or 'confirmed') == k %}checked{% endif %}><span>{{ _(label) }}</span></label>
+    {% endfor %}
+  </div>
+  <div class="grid-3 date-fields">
+    <label>{{ _('날짜') }}<input type="date" name="date" value="{{ form.date or '' }}"></label>
+    <label>{{ _('시작') }}<input type="time" name="start_time" value="{{ form.start_time or '08:00' }}"></label>
+    <label>{{ _('끝') }}<input type="time" name="end_time" value="{{ form.end_time or '16:00' }}"></label>
+  </div>
+  <label>{{ _('메모') }}<input name="note" value="{{ form.note or '' }}" maxlength="500" placeholder="{{ _('예: 측면 문으로 출입') }}"></label>
+  {% if warnings and not blocked %}
+    <label>{{ _('그대로 예약하는 사유') }}<input name="override_reason" maxlength="500"></label>
+    <div class="row wrap"><button class="btn primary">{{ _('바꾼 내용으로 다시 예약') }}</button><button class="btn danger" name="force" value="1">{{ _('그대로 예약 (기록에 남음)') }}</button></div>
+  {% else %}
+    <button class="btn primary">{{ _('예약') }}</button>
+  {% endif %}
+</form>
+<script>
+  // '설치업자가 날짜 고르기'는 날짜·시간이 필요 없다
+  document.querySelectorAll('.booking-form').forEach(f => {
+    const box = f.querySelector('.date-fields');
+    const sync = () => box.classList.toggle('hidden', f.querySelector('input[name=mode]:checked').value === 'requested');
+    f.addEventListener('change', sync); sync();
+  });
+</script>
+{% endmacro %}

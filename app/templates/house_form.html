@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% set editing = house and house.id %}
-{% block title %}{{ _('집 정보 수정') if editing else _('새 집 등록') }} · {{ BRAND }}{% endblock %}
+{% block title %}{{ _('프로젝트 정보 수정') if editing else _('새 프로젝트') }} · {{ BRAND }}{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>{{ _('집 정보 수정') if editing else _('새 집 등록') }}</h1>
+  <h1>{{ _('프로젝트 정보 수정') if editing else _('새 프로젝트') }}</h1>
   <a class="btn" href="{% if editing %}/houses/{{ house.id }}{% else %}/houses{% endif %}">{{ _('취소') }}</a>
 </div>
 {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
@@ -18,6 +18,6 @@
   <label>{{ _('집주인 이메일') }} <input type="email" name="landlord_email" value="{{ h.landlord_email or '' }}"></label>
   <label>{{ _('메모 (출입 방법, 방문 가능 시간 등)') }} <textarea name="memo" rows="4">{{ h.memo or '' }}</textarea></label>
   {% if editing %}<p class="muted small">{{ _('수정하면 이전 내용이 변경이력에 남습니다.') }}</p>{% endif %}
-  <button class="btn primary">{{ _('저장') if editing else _('등록하기') }}</button>
+  <button class="btn primary">{{ _('저장') if editing else _('프로젝트 만들기') }}</button>
 </form>
 {% endblock %}

@@ -7,7 +7,41 @@
 <section class="card me-card">
   <div class="me-name-big">{{ user.name }} <span class="role role-{{ user.role }}">{{ _(ROLES[user.role]) }}</span></div>
   <div class="muted">{{ user.email or '' }}</div>
+  <details class="name-edit"><summary class="btn small">{{ _('이름 바꾸기') }}</summary>
+    <form method="post" action="/me/name" class="row"><input name="name" value="{{ user.name }}" maxlength="60" required aria-label="{{ _('이름') }}"><button class="btn small primary">{{ _('저장') }}</button></form>
+  </details>
 </section>
+
+{% if user.role == 'installer' %}
+<section class="card" id="licences">
+  <div class="q-head"><h2>{{ _('자격증') }}</h2>
+    {% if fgas_ok %}<span class="tag ok">{{ _('F-Gas 승인됨') }} · {{ user.fgas_expiry }}</span>
+    {% else %}<span class="tag bad">{{ _('F-Gas 승인 전') }}</span>{% endif %}</div>
+  <p class="muted small">{{ _('냉매를 다루는 시공은 회사가 F-Gas 자격증을 승인해야 배정됩니다. 현장조사는 승인 전에도 할 수 있습니다.') }}</p>
+  {% for l in licences %}
+  <div class="lic-row">
+    <span><b>{{ _(C.LICENCE_KINDS[l.kind]) }}</b>
+      <span class="muted small">{% if l.number %}{{ l.number }}{% endif %}{% if l.expiry %} · {{ _('만료') }} {{ l.expiry }}{% endif %} · <a href="/licences/{{ l.id }}" target="_blank">{{ l.original_name }}</a></span>
+      {% if l.status == 'rejected' and l.check_note %}<span class="small bad-text">{{ _('반려 사유') }}: {{ l.check_note }}</span>{% endif %}</span>
+    <span class="row">
+      <span class="tag {{ 'ok' if l.status == 'approved' else 'bad' if l.status == 'rejected' else 'warn' }}">{{ _(C.LICENCE_STATUS[l.status]) }}</span>
+      {% if l.status != 'approved' %}<form method="post" action="/licences/{{ l.id }}/remove" data-confirm="{{ _('이 자격증을 지울까요?') }}" onsubmit="return confirm(this.dataset.confirm)"><button class="btn small">{{ _('지우기') }}</button></form>{% endif %}
+    </span>
+  </div>
+  {% else %}<p class="muted small">{{ _('아직 올린 자격증이 없습니다.') }}</p>{% endfor %}
+  <details class="lic-upload" {% if not licences %}open{% endif %}><summary class="btn small primary">{{ _('+ 자격증 올리기') }}</summary>
+    <form method="post" action="/me/licences" enctype="multipart/form-data" class="stack">
+      <label>{{ _('종류') }}<select name="kind">{% for k, label in C.LICENCE_KINDS.items() %}<option value="{{ k }}">{{ _(label) }}</option>{% endfor %}</select></label>
+      <div class="grid-2">
+        <label>{{ _('번호') }}<input name="number" maxlength="60" placeholder="{{ _('예: F-GAS 104233') }}"></label>
+        <label>{{ _('만료일') }}<input type="date" name="expiry"></label>
+      </div>
+      <label>{{ _('자격증 사진 또는 PDF') }}<input type="file" name="files" accept="image/*,application/pdf" required></label>
+      <button class="btn primary">{{ _('회사로 보내기') }}</button>
+    </form>
+  </details>
+</section>
+{% endif %}
 
 <section class="card">
   <h2>{{ _('휴대폰 번호') }}</h2>
@@ -34,10 +68,14 @@
 
 {% if is_office %}
 <section class="card links-card">
-  <a href="/invites">✉️ {{ _('초대하기') }}</a>
-  <a href="/users">👥 {{ _('설치업자·사용자') }}</a>
+  <a href="/invites">✉️ {{ _('사용자 초대') }}</a>
+  <a href="/payments">💷 {{ _('정산·결제 관리') }}</a>
+  <a href="/users/installers">👷 {{ _('설치업자 관리') }}</a>
+  <a href="/users/staff">👥 {{ _('직원 관리') }}</a>
+  <a href="/settings/survey">⚙️ {{ _('현장조사 질문지') }}</a>
 </section>
 {% endif %}
+<section class="card links-card"><a href="/guide">📖 {{ _('가이드 — 사용 방법') }}</a></section>
 <section class="card">
   <h2>{{ _('언어') }}</h2>
   <div class="seg">

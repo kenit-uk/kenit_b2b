@@ -6,7 +6,7 @@ from app.main import app
 
 with TestClient(app):
     pass
-from testdb import db
+from testdb import db, set_stage
 
 codes = dict(db.execute("select key, value from settings"))
 
@@ -53,7 +53,7 @@ assert rows(inst) == {"1 Test Road": False} and rows(staffB)["1 Test Road"] is T
 staffB.get(f"/houses/{hid}")
 staffA.post(f"/houses/{hid}/entries/quote", data=dict(amount="2000", body="견적 내용"))
 assert rows(inst)["1 Test Road"] is False
-staffA.post(f"/houses/{hid}/stage", data=dict(stage="4"))
+set_stage(hid, 4, "a@ex.com")
 assert rows(inst)["1 Test Road"] is True
 page = inst.get(f"/houses/{hid}").text
 assert "entry-quote" not in page and "견적 내용" not in page

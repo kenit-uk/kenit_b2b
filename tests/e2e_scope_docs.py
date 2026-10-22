@@ -84,7 +84,7 @@ assert db.execute("select kind from messages").fetchone()[0] == "scope_comment"
 assert dave.post(f"/houses/{hid}/scope/2/lock").status_code == 403
 assert admin.post(f"/houses/{hid}/scope/1/lock").status_code == 400     # 최신만
 go(admin, f"/houses/{hid}/scope/2/lock")
-assert db.execute("select stage from houses where id=?", (hid,)).fetchone()[0] == 4
+assert db.execute("select stage from houses where id=?", (hid,)).fetchone()[0] == 3
 r = admin.get(f"/houses/{hid}/scope-edit", follow_redirects=True); assert "변경 요청(VO)으로만" in r.text
 assert admin.post(f"/houses/{hid}/scope-edit", data=scope_form([{"name": "x"}], "x")).status_code == 400
 assert "🔒" in admin.get(f"/houses/{hid}").text
@@ -94,7 +94,7 @@ png = b"\x89PNG\r\n\x1a\n" + b"0" * 64
 pdf = b"%PDF-1.4 test"
 assert dave.post(f"/houses/{hid}/docs", data=dict(category="drawing", title="x"), files=[("files", ("a.pdf", pdf, "application/pdf"))]).status_code == 403
 r = admin.post(f"/houses/{hid}/docs", data=dict(category="lats", title="Quote Q-0412"), files=[("files", ("q.pdf", pdf, "application/pdf"))], follow_redirects=True)
-assert "가격 문서" in r.text and db.execute("select count(*) from documents").fetchone()[0] == 0
+assert "가격 자료" in r.text and db.execute("select count(*) from documents").fetchone()[0] == 0
 r = admin.post(f"/houses/{hid}/docs", data=dict(category="drawing", title="도면 — 침실 2"), files=[("files", ("d1.png", png, "image/png"))], follow_redirects=False)
 d1 = int(re.search(r"/docs/(\d+)$", r.headers["location"]).group(1))
 page = dave.get(f"/houses/{hid}/docs").text

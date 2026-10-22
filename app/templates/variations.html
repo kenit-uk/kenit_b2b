@@ -3,19 +3,20 @@
 {% import "_macros.html" as m with context %}
 {% block title %}{{ _('변경 요청') }} · {{ house.address }}{% endblock %}
 {% block content %}
-{{ s.flow_head(('/visits/' ~ visit_id) if visit_id else '/houses/' ~ house.id, house.address.split(',')[0], _('작업 변경')) }}
+{{ s.flow_head(('/visits/' ~ visit_id) if visit_id else '/houses/' ~ house.id, house.address.split(',')[0], _('변경 요청')) }}
 
-{% if not is_office %}
-<form method="post" action="/houses/{{ house.id }}/variations" enctype="multipart/form-data" class="card stack var-form" {{ m.upload_attrs(house.id) }}>
+{% if is_office %}<details class="card"><summary class="btn small">{{ _('+ 고객 요청 변경 기록') }}</summary>
+<p class="muted small">{{ _('확정된 작업 범위를 바꿔야 할 때 (예: 고객이 실내기 추가를 원함) 여기에 남기고, 고객 승인 결과를 표시하세요.') }}</p>{% endif %}
+<form method="post" action="/houses/{{ house.id }}/variations" enctype="multipart/form-data" class="{{ '' if is_office else 'card' }} stack var-form" {{ m.upload_attrs(house.id) }}>
   <h3>{{ _('변경 요청하기') }}</h3>
   {% if visit_id %}<input type="hidden" name="visit_id" value="{{ visit_id }}">{% endif %}
   {{ s.choices('kind', C.VARIATION_KINDS, 'move_idu', 'grid2') }}
   {{ s.photo_input('+ 사진') }}
   <textarea name="body" rows="3" required placeholder="{{ _('예: 여기 벽이 비어 있어요. 왼쪽으로 1미터 옮겨서 벽돌 벽에 다는 게 좋겠어요.') }}"></textarea>
   <p class="muted small">🎤 {{ _('휴대폰 키보드의 마이크 버튼을 누르면 말로 입력할 수 있습니다.') }}</p>
-  <button class="btn primary block">{{ _('회사로 보내기') }}</button>
+  <button class="btn primary block">{{ _('저장') if is_office else _('회사로 보내기') }}</button>
 </form>
-{% endif %}
+{% if is_office %}</details>{% endif %}
 
 <h2 class="section-title">{{ _('이 프로젝트의 변경 요청') }}</h2>
 {% for x in variations %}
@@ -24,8 +25,8 @@
   <p class="body">{{ x.body }}</p>
   {{ s.media_grid(photos.get(x.id, [])) }}
   <p class="muted small">
-    {% if x.status == 'pending' %}{{ _('고객 승인 대기 중. {when} 전송.', when=x.created_at|dt) }}
-    {% else %}{{ _('{when} {who} 결정.', when=x.decided_at|dt, who=x.decider_name) }}{% if x.status == 'approved' %} {{ _('이제 작업 범위에 포함.') }}{% endif %}{% endif %}
+    {% if x.status == 'pending' %}{{ _('고객 결정 대기 중. {when} 전송.', when=x.created_at|dt) }}
+    {% else %}{{ _('{when} {who} 결정.', when=x.decided_at|dt, who=x.decider_name) }}{% if x.status == 'approved' %} {{ _('시공 가능 — 작업 범위와 함께 확인하세요.') }}{% endif %}{% endif %}
     {% if x.decision_note %} — {{ x.decision_note }}{% endif %}
   </p>
   {% if is_office %}
@@ -33,7 +34,7 @@
     <input name="note" placeholder="{{ _('메모 (선택)') }}" maxlength="500">
     {% if x.status != 'approved' %}<button class="btn small primary" name="status" value="approved">{{ _('고객 승인 → 시공 가능') }}</button>{% endif %}
     {% if x.status != 'rejected' %}<button class="btn small" name="status" value="rejected">{{ _('원래대로 진행') }}</button>{% endif %}
-    {% if x.status != 'pending' %}<button class="btn small" name="status" value="pending">{{ _('다시 승인 대기로') }}</button>{% endif %}
+    {% if x.status != 'pending' %}<button class="btn small" name="status" value="pending">{{ _('결정 취소') }}</button>{% endif %}
   </form>
   <p class="muted small">{{ _('금액은 견적 기록(회사 전용)에 남기세요. 설치업자에게는 보이지 않습니다.') }}</p>
   {% endif %}

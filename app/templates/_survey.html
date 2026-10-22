@@ -88,4 +88,5 @@
   {% endif %}
   {{ caller() if caller is defined else '' }}
 </div>
+{% if can_edit is defined and not can_edit %}<div class="flash flash-warn">{{ _('회사가 검토를 마친 조사입니다. 보기만 할 수 있고, 고칠 것이 있으면 회사에 메시지를 보내세요.') }}</div>{% endif %}
 {%- endmacro %}

@@ -14,9 +14,9 @@
 
 {% set ready = required.values()|select|list|length == required|length %}
 <div class="pack-box {{ 'ready' if ready else 'missing' }}">
-  <b>{{ _('1차 시공 전 필수 자료 준비 완료') if ready else _('1차 시공 전 필수 자료가 아직 다 없습니다') }}</b>
+  <b>{{ _('시공 전 필수 자료 준비 완료') if ready else _('시공 전 필수 자료가 아직 다 없습니다') }}</b>
   <div>{% for k, ok in required.items() %}<span>{{ '✓' if ok else '○' }} {{ _(C.REQUIRED_DOCS[k]) }}</span>{% endfor %}</div>
-  {% if not ready and is_office %}<p class="small">{{ _('세 가지가 모두 올라와야 1차 시공 일정을 예약할 수 있습니다.') }}</p>{% endif %}
+  {% if not ready and is_office %}<p class="small">{{ _('세 가지가 모두 올라와야 시공 일정을 예약할 수 있습니다.') }}</p>{% endif %}
 </div>
 
 {% set new_docs = docs|selectattr('my_ack', 'none')|list if not is_office else [] %}
@@ -42,7 +42,7 @@
 {% if is_office %}
 <section class="card">
   <h2>{{ _('자료 올리기') }}</h2>
-  <p class="muted small">⚠ {{ _('견적서·인보이스 같은 가격 문서는 올리지 마세요. 설치업자도 이 자료를 봅니다.') }}</p>
+  <p class="muted small">⚠ {{ _('견적서·인보이스 같은 가격 자료는 올리지 마세요. 설치업자도 이 자료를 봅니다.') }}</p>
   <form method="post" action="/houses/{{ house.id }}/docs" enctype="multipart/form-data" class="stack" {{ m.upload_attrs(house.id) }}>
     <div class="grid-3">
       <label>{{ _('종류') }}<select name="category" required>{% for k, label in C.DOC_CATEGORIES.items() %}<option value="{{ k }}" {% if cat == k %}selected{% endif %}>{{ _(label) }}</option>{% endfor %}</select></label>

@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
+{% import "_booking.html" as bk with context %}
 {% block title %}{{ house.address }} · {{ BRAND }}{% endblock %}
 {% block content %}
-<div class="crumb small muted"><a href="/houses">{{ _('프로젝트') if is_office else _('내 작업') }}</a> / {{ house.ref_no }}</div>
+<div class="crumb small muted"><a href="/houses">{{ _('프로젝트') }}</a> / {{ house.ref_no }}</div>
 <div class="page-head project-head">
   <div>
     <h1>{{ house.address }}</h1>
@@ -10,33 +11,127 @@
   </div>
   {% if is_office %}
   <div class="row wrap head-actions">
-    <a class="btn" href="/houses/{{ house.id }}/edit">{{ _('집 정보 수정') }}</a>
+    <a class="btn" href="/houses/{{ house.id }}/edit">{{ _('프로젝트 정보 수정') }}</a>
     <form method="post" action="/houses/{{ house.id }}/hold"
           data-confirm="{{ _('보류를 해제할까요?') if house.on_hold else _('이 프로젝트를 보류할까요?') }}" onsubmit="return confirm(this.dataset.confirm)">
       <button class="btn {% if not house.on_hold %}danger{% endif %}">{{ _('보류 해제') if house.on_hold else _('보류') }}</button>
     </form>
-    <a class="btn primary" href="/calendar?house={{ house.id }}#book">{{ _('+ 방문 예약') }}</a>
   </div>
   {% endif %}
 </div>
 
-<section class="card stage-card">
+{# 진행: 단계 + 다음 할 일 + 이 프로젝트의 확인할 일 (늘 보임) #}
+<section class="card overview-card">
   {{ m.stage_bar(house) }}
-  {% if is_office %}
-  <form method="post" action="/houses/{{ house.id }}/stage" class="row wrap stage-move">
-    <select name="stage" aria-label="{{ _('단계') }}">
-      {% for n, name in STAGES.items() %}<option value="{{ n }}" {% if n == house.stage %}selected{% endif %}>{{ n }}. {{ _(name) }}</option>{% endfor %}
-    </select>
-    <input name="note" placeholder="{{ _('변경 사유 (선택)') }}" maxlength="500">
-    <button class="btn small">{{ _('단계 이동') }}</button>
-    <span class="muted small">{{ _('단계 이동은 회사만 할 수 있습니다.') }}</span>
-  </form>
+  <p class="muted small stage-auto">{{ _('단계는 진행 상황(방문 예약, 현장조사, 작업 범위 확정, 시공 보고 등)에 따라 자동으로 바뀝니다.') }}</p>
+  {% if is_office and house.stage in (5, 6) %}
+  <details class="stage-back" id="stage-back"><summary class="small link-text">{{ _('시공 완료 취소 (시공 단계로 되돌리기)') if house.stage == 5 else _('완료 취소 (인수인계 단계로 되돌리기)') }}</summary>
+    <form method="post" action="/houses/{{ house.id }}/stage-back" class="row wrap"
+          data-confirm="{{ _('한 단계 되돌릴까요? 작업 기록에 남습니다.') }}" onsubmit="return confirm(this.dataset.confirm)">
+      <input name="note" required maxlength="500" placeholder="{{ _('되돌리는 사유 (예: 잘못 눌렀음, 시공이 더 필요함)') }}">
+      <button class="btn small">{{ _('되돌리기') }}</button>
+    </form>
+  </details>
   {% endif %}
+  {{ m.next_step_box(next) }}
+{% if pending %}
+<section class="card pending-card" id="pending">
+  <div class="q-head"><h2>{{ _('확인할 일') }} <span class="count orange">{{ pending|length }}</span></h2></div>
+  {% for i in pending %}
+  <div class="pending-row {{ 'urgent' if i.urgent else '' }}">
+    <a href="{{ i.link }}"><b>{{ _(i.label) }}</b>
+      <span class="muted small">{{ i.who or '' }} · {{ i.at|dt }}{% if i.options %} · {{ _('후보') }} {% for d in i.options %}{{ m.day(d) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}{% if i.row and i.row.body %} · {{ i.row.body|truncate(60) }}{% elif i.row and i.row.note %} · {{ i.row.note|truncate(60) }}{% endif %}</span></a>
+    <span class="row">
+      <a class="btn small" href="{{ i.link }}">{{ _('보기') }}</a>
+      {% if i.reviewable and i.type != 'variation' %}
+      <form method="post" action="/approvals/{{ i.type }}/{{ i.id }}/review"><input type="hidden" name="back" value="/houses/{{ house.id }}#pending"><button class="btn small primary">{{ _('확인') }}</button></form>
+      {% endif %}
+    </span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
 </section>
 
-<div class="project-grid">
-<div class="project-main">
+{# 아래는 탭: 고른 것만 보인다. 주소 끝 #이름(예: #book, #payments)으로 들어오면 그 탭이 열린다 #}
+{% set scope_new = scopes and not is_office and not scopes[0].my_ack %}
+{% set vo_pending = variation_rows|selectattr('status', 'equalto', 'pending')|list|length %}
+{% set docs_new = docs|rejectattr('my_ack')|list|length if not is_office else 0 %}
+{% set open_visits = visits|selectattr('status', 'in', ['requested', 'options', 'proposed', 'confirmed'])|list|length %}
+<nav class="project-tabs" role="tablist" data-default="{{ 'log' if (request.query_params.get('tab') or request.query_params.get('q')) else 'schedule' }}">
+  <button type="button" class="ptab" data-tab="schedule">{{ _('일정') }}{% if open_visits %} <b>{{ open_visits }}</b>{% endif %}</button>
+  <button type="button" class="ptab" data-tab="scope">{{ _('작업 범위') }}{% if scope_new %} <span class="tag new">NEW</span>{% elif vo_pending %} <b class="hot">{{ vo_pending }}</b>{% elif scopes %} <span class="muted">v{{ scopes[0].version }}</span>{% endif %}</button>
+  <button type="button" class="ptab" data-tab="survey">{{ _('현장조사') }}{% if survey %} <span class="muted">· {{ _(SURVEY_STATUS[survey.status]) }}</span>{% endif %}</button>
+  <button type="button" class="ptab" data-tab="docs">{{ _('자료') }}{% if docs_new %} <span class="tag new">{{ docs_new }}</span>{% elif docs %} <b>{{ docs|length }}</b>{% endif %}</button>
+  {% if is_office %}<button type="button" class="ptab" data-tab="pay">{{ _('결제') }}</button>{% endif %}
+  <button type="button" class="ptab" data-tab="people">{{ _('사람') }}</button>
+  <button type="button" class="ptab" data-tab="log">{{ _('기록') }}{% if new_logs %} <span class="new-badge">{{ new_logs|length }}</span>{% endif %}</button>
+</nav>
 
+<div class="tab-panel" id="tab-schedule">
+<section class="card" id="visits">
+  <div class="q-head"><h2>{{ _('일정') }}</h2></div>
+  {% if is_office %}
+  <details class="book-box" id="book">
+    <summary class="btn small">{{ _('+ 방문 예약') }}</summary>
+    {{ bk.booking_form(all_installers, {'date': request.query_params.get('book_date', ''), 'installer_id': request.query_params.get('book_installer', '')}, [], house=house) }}
+  </details>
+  {% endif %}
+  {% for v in visits %}
+  <div class="visit-row st-{{ v.status }}">
+    <div><b>{{ _(vlabel(v)) }}</b>
+      {% if visit_options.get(v.id) %}<span class="small option-dates">{{ _('후보') }} {% for d in visit_options[v.id] %}<b>{{ m.day(d) }}</b>{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+      <span class="muted small">{{ v.date or _('날짜 미정') }}{% if v.start_time %} · {{ v.start_time }}{% if v.end_time %}–{{ v.end_time }}{% endif %}{% endif %}{% if is_office %} · {{ v.installer_name }}{% endif %}</span></div>
+    <span class="row">
+      <span class="tag {{ 'ok' if v.status in ('confirmed', 'done') else 'bad' if v.status == 'declined' else 'warn' }}">{{ _(VISIT_STATUS[v.status]) }}</span>
+      {% if not is_office and v.status == 'requested' %}<a class="btn small primary" href="/visits/{{ v.id }}/dates">{{ _('날짜 고르기') }}</a>
+      {% elif not is_office and v.status == 'proposed' %}
+        <form method="post" action="/visits/{{ v.id }}/reply"><input type="hidden" name="back" value="/houses/{{ house.id }}#visits"><button class="btn small primary" name="answer" value="yes">{{ _('예') }}</button></form>
+        <form method="post" action="/visits/{{ v.id }}/reply"><input type="hidden" name="back" value="/houses/{{ house.id }}#visits"><button class="btn small" name="answer" value="no">{{ _('아니요') }}</button></form>
+      {% elif v.status in ('confirmed', 'done') %}<a class="btn small" href="/visits/{{ v.id }}">{{ _('현장 기록') }}</a>{% endif %}
+      {% if is_office and v.status not in ('done', 'cancelled') %}
+      <form method="post" action="/visits/{{ v.id }}/cancel" data-confirm="{{ _('이 방문을 취소할까요?') }}" onsubmit="return confirm(this.dataset.confirm)"><button class="btn small">{{ _('취소') }}</button></form>
+      {% endif %}
+    </span>
+    {% if is_office and v.status == 'options' and visit_options.get(v.id) %}
+    <form method="post" action="/visits/{{ v.id }}/confirm" class="confirm-dates" id="confirm-{{ v.id }}">
+      <p class="small">{{ _('{name}님이 가능한 날짜를 보냈습니다. 고객과 통화한 뒤 하루를 확정하세요.', name=v.installer_name) }}</p>
+      <div class="choices">
+        {% for d in visit_options[v.id] %}<label class="choice"><input type="radio" name="date" value="{{ d }}" {% if loop.first %}checked{% endif %}><span>{{ m.day(d) }}</span></label>{% endfor %}
+      </div>
+      <div class="row wrap">
+        <label class="small">{{ _('시작') }} <input type="time" name="start_time" value="08:00"></label>
+        <label class="small">{{ _('끝') }} <input type="time" name="end_time" value="16:00"></label>
+        <button class="btn small primary">{{ _('이 날로 확정') }}</button>
+      </div>
+    </form>
+    {% endif %}
+    {% if is_office and v.status not in ('done', 'cancelled') %}
+    <button type="button" class="btn small reschedule-btn" onclick="document.getElementById('resched-{{ v.id }}').showModal()">{{ _('일정 변경') }}</button>
+    <dialog class="modal" id="resched-{{ v.id }}" onclick="if (event.target === this) this.close()">
+      <div class="q-head"><div><h2>{{ _('일정 변경') }}</h2><p class="muted small">{{ _(vlabel(v)) }} · {{ house.address.split(',')[0] }}</p></div>
+        <form method="dialog"><button class="btn small" aria-label="{{ _('닫기') }}">✕</button></form></div>
+      <form method="post" action="/visits/{{ v.id }}/reschedule" class="stack">
+        <div class="grid-3">
+          <label>{{ _('날짜') }}<input type="date" name="date" value="{{ v.date or '' }}" required></label>
+          <label>{{ _('시작') }}<input type="time" name="start_time" value="{{ v.start_time or '08:00' }}"></label>
+          <label>{{ _('끝') }}<input type="time" name="end_time" value="{{ v.end_time or '16:00' }}"></label>
+        </div>
+        <div class="grid-2">
+          <label>{{ _('설치업자') }}<select name="installer_id">{% for u in all_installers %}<option value="{{ u.id }}" {% if u.id == v.installer_id %}selected{% endif %}>{{ u.name }}</option>{% endfor %}</select></label>
+          <label>{{ _('방식') }}<select name="mode"><option value="confirmed">{{ _('확정으로 예약') }}</option><option value="proposed" {% if v.status == 'proposed' %}selected{% endif %}>{{ _('설치업자에게 가능 여부 묻기') }}</option></select></label>
+        </div>
+        <input name="override_reason" maxlength="500" placeholder="{{ _('경고가 떠도 진행하는 사유 (필요할 때만)') }}">
+        <button class="btn primary">{{ _('일정 저장') }}</button>
+      </form>
+    </dialog>
+    {% endif %}
+  </div>
+  {% else %}<p class="muted small">{{ _('예약된 방문이 없습니다.') }}</p>{% endfor %}
+</section>
+</div>
+
+<div class="tab-panel" id="tab-scope">
 <section class="card" id="scope">
   <div class="q-head"><h2>{{ _('작업 범위 버전') }}</h2>
     <span class="row">
@@ -72,62 +167,18 @@
 </section>
 
 <section class="card" id="variations">
-  <div class="q-head"><h2>{{ _('변경 요청') }}</h2><a class="btn small" href="/houses/{{ house.id }}/variations">{{ _('+ 새 변경 요청') if not is_office else _('변경 요청 보기') }}</a></div>
+  {% set scope_locked = scopes and scopes|selectattr('locked_at')|list %}
+  <div class="q-head"><h2>{{ _('변경 요청') }}</h2>{% if is_office or scope_locked %}<a class="btn small" href="/houses/{{ house.id }}/variations">{{ _('변경 요청 보기') if is_office else _('+ 새 변경 요청') }}</a>{% endif %}</div>
   {% for x in variation_rows %}
   <a class="line-row" href="/houses/{{ house.id }}/variations#vo-{{ x.number }}">
     <span><b>VO-{{ x.number }} · {{ _(VARIATION_KINDS[x.kind]) }}</b><span class="muted small">{{ x.author_name }} · {{ x.created_at|dt }}{% if x.body %} · {{ x.body|truncate(50) }}{% endif %}</span></span>
     <span class="var-badge st-{{ x.status }}">{{ _(VARIATION_STATUS[x.status]) }}</span>
   </a>
-  {% else %}<p class="muted small">{{ _('변경 요청이 없습니다.') }}</p>{% endfor %}
+  {% else %}<p class="muted small">{{ _('변경 요청이 없습니다.') }}{% if not scope_locked %} {{ _('작업 범위가 확정된 뒤 바뀌는 부분을 여기에 요청합니다.') }}{% endif %}</p>{% endfor %}
 </section>
-
-<section class="card" id="visits">
-  <div class="q-head"><h2>{{ _('일정') }}</h2>{% if is_office %}<a class="btn small" href="/calendar?house={{ house.id }}#book">{{ _('+ 방문 예약') }}</a>{% endif %}</div>
-  {% for v in visits %}
-  <div class="visit-row st-{{ v.status }}">
-    <div><b>{{ _(VISIT_KINDS[v.kind]) }}</b>
-      <span class="muted small">{{ v.date or _('날짜 미정') }}{% if v.start_time %} · {{ v.start_time }}{% if v.end_time %}–{{ v.end_time }}{% endif %}{% endif %}{% if is_office %} · {{ v.installer_name }}{% endif %}</span></div>
-    <span class="row">
-      <span class="tag {{ 'ok' if v.status in ('confirmed', 'done') else 'bad' if v.status == 'declined' else 'warn' }}">{{ _(VISIT_STATUS[v.status]) }}</span>
-      {% if not is_office and v.status == 'requested' %}<a class="btn small primary" href="/visits/{{ v.id }}/dates">{{ _('날짜 고르기') }}</a>
-      {% elif v.status in ('confirmed', 'done') %}<a class="btn small" href="/visits/{{ v.id }}">{{ _('현장 기록') }}</a>{% endif %}
-      {% if is_office and v.status not in ('done', 'cancelled') %}
-      <form method="post" action="/visits/{{ v.id }}/cancel" data-confirm="{{ _('이 방문을 취소할까요?') }}" onsubmit="return confirm(this.dataset.confirm)"><button class="btn small">{{ _('취소') }}</button></form>
-      {% endif %}
-    </span>
-    {% if is_office and v.status not in ('done', 'cancelled') %}
-    <details class="reschedule"><summary class="small link-text">{{ _('일정 변경') }}</summary>
-      <form method="post" action="/visits/{{ v.id }}/reschedule" class="stack">
-        <div class="grid-3">
-          <label>{{ _('날짜') }}<input type="date" name="date" value="{{ v.date or '' }}" required></label>
-          <label>{{ _('시작') }}<input type="time" name="start_time" value="{{ v.start_time or '08:00' }}"></label>
-          <label>{{ _('끝') }}<input type="time" name="end_time" value="{{ v.end_time or '16:00' }}"></label>
-        </div>
-        <div class="grid-2">
-          <label>{{ _('설치업자') }}<select name="installer_id">{% for u in all_installers %}<option value="{{ u.id }}" {% if u.id == v.installer_id %}selected{% endif %}>{{ u.name }}</option>{% endfor %}</select></label>
-          <label>{{ _('방식') }}<select name="mode"><option value="confirmed">{{ _('확정으로 예약') }}</option><option value="proposed" {% if v.status == 'proposed' %}selected{% endif %}>{{ _('설치업자에게 가능 여부 묻기') }}</option></select></label>
-        </div>
-        <input name="override_reason" maxlength="500" placeholder="{{ _('경고가 떠도 진행하는 사유 (필요할 때만)') }}">
-        <button class="btn small primary">{{ _('일정 저장') }}</button>
-      </form>
-    </details>
-    {% endif %}
-  </div>
-  {% else %}<p class="muted small">{{ _('예약된 방문이 없습니다.') }}</p>{% endfor %}
-</section>
-
-<section class="card" id="activity">
-  <div class="q-head"><h2>{{ _('작업 기록') }} <span class="muted small">({{ _('수정 불가') }})</span></h2><a class="small" href="?tab=history#timeline">{{ _('전체 보기') }}</a></div>
-  <ul class="activity">
-    {% for h in history[:8] %}
-    <li><span class="muted">{{ h.created_at|dt }}</span> · {{ h.actor_name }} — <b>{{ _(AUDIT_ACTIONS.get(h.action, h.action)) }}</b>{% set d = m.audit_detail(h)|trim %}{% if d and h.action not in ('house_create',) %} · {{ d }}{% endif %}</li>
-    {% else %}<li class="muted">{{ _('아직 기록이 없습니다.') }}</li>{% endfor %}
-  </ul>
-</section>
-
 </div>
-<aside class="project-side">
 
+<div class="tab-panel" id="tab-survey">
 <section class="card" id="survey">
   <div class="q-head"><h2>{{ _('현장조사') }}</h2>
     {% if survey %}<span class="survey-status status-{{ survey.status }}">{{ _(SURVEY_STATUS[survey.status]) }}</span>{% endif %}</div>
@@ -138,16 +189,59 @@
       <a class="btn block {% if survey.status == 'submitted' %}primary{% endif %}" href="/houses/{{ house.id }}/survey">{{ _('현장조사 검토') }}</a>
     {% else %}
       <a class="btn block {% if survey.status == 'draft' or survey.photo_requests %}primary{% endif %}" href="/houses/{{ house.id }}/survey">
-        {{ _('현장조사 계속하기') if survey.status == 'draft' else _('조사 내용 보기·고치기') }}</a>
+        {{ _('현장조사 계속하기') if survey.status == 'draft' else _('조사 내용 보기') }}</a>
     {% endif %}
   {% else %}
     <p class="muted small">{{ _('아직 시작하지 않았습니다.') }}</p>
-    <a class="btn block {% if not is_office %}primary{% endif %}" href="/houses/{{ house.id }}/survey">{{ _('현장조사 시작') }}</a>
+    <a class="btn block" href="/houses/{{ house.id }}/survey">{{ _('현장조사 시작') }}</a>
   {% endif %}
 </section>
+</div>
 
+<div class="tab-panel" id="tab-docs">
+<section class="card" id="docs">
+  <div class="q-head"><h2>{{ _('자료') }}</h2><a class="btn small" href="/houses/{{ house.id }}/docs">{{ _('+ 올리기') if is_office else _('자료함 열기') }}</a></div>
+  {% set ready = doc_required.values()|select|list|length == doc_required|length %}
+  {% if 2 <= house.stage <= 3 or (ready and house.stage < 6) %}
+  <div class="pack-box {{ 'ready' if ready else 'missing' }}">
+    <b>{{ _('시공 시작 준비 완료 ✓') if ready else _('시공 전 필수 자료가 아직 다 없습니다') }}</b>
+    <div>{% for k, ok in doc_required.items() %}<span>{{ '✓' if ok else '○' }} {{ _(C_REQUIRED[k]) }}</span>{% endfor %}</div>
+  </div>
+  {% endif %}
+  {% for d in docs[:6] %}
+  <a class="line-row" href="/houses/{{ house.id }}/docs/{{ d.id }}">
+    <span><b>{{ d.title }}</b> <span class="muted small">v{{ d.version }}</span></span>
+    {% if is_office %}
+      {% set acks = doc_acks.get(d.id, []) %}{% set checked = acks|selectattr('at')|list|length %}
+      <span class="tag {{ 'ok' if acks and checked == acks|length else 'warn' }}">{{ _('확인 {a}/{b}', a=checked, b=acks|length) }}</span>
+    {% elif d.my_ack %}<span class="tag ok">{{ _('확인함') }}</span>{% else %}<span class="tag new">NEW</span>{% endif %}
+  </a>
+  {% else %}<p class="muted small">{{ _('아직 올린 자료가 없습니다.') }}</p>{% endfor %}
+  <p class="muted small">{{ _('가격 정보는 공유되지 않습니다.') }}</p>
+</section>
+</div>
+
+{% if is_office %}
+<div class="tab-panel" id="tab-pay">
+{% if is_office %}
+<section class="card" id="payments">
+  <div class="q-head"><h2>{{ _('결제') }}</h2><a class="btn small" href="/payments#h-{{ house.id }}">{{ _('정산·결제 관리') }}</a></div>
+  {% set sm = pay_sum %}
+  <div class="pay-row"><b>{{ _('총 계약 금액') }}</b><span>{% if sm.total is not none %}<b>£{{ sm.total|money }}</b>{% else %}<span class="muted">{{ _('미입력') }}</span>{% endif %}</span></div>
+  {% for k, lab in PAYMENT_KINDS.items() %}
+  <div class="pay-row"><b>{{ _(lab) }}</b>{{ m.pay_cell(sm.pays[k], sm.amount[k]) }}</div>
+  {% endfor %}
+  {% if sm.total is not none %}<div class="pay-row"><b>{{ _('받음 / 남음') }}</b><span><span class="ok-text">£{{ sm.received|money }}</span> / <b>£{{ sm.remaining|money }}</b></span></div>{% endif %}
+  <div class="row">{{ m.pay_modal(house, sm, '/houses/' ~ house.id ~ '#payments') }}</div>
+  <p class="muted small">{{ _('회사 전용 · 설치업자에게 보이지 않습니다.') }}</p>
+</section>
+{% endif %}
+</div>
+{% endif %}
+
+<div class="tab-panel" id="tab-people">
 <section class="card" id="members">
-  <h2>{{ _('프로젝트 참여자') }}</h2>
+  <h2>{{ _('배정된 설치업자') }}</h2>
   {% for u in members %}
   <div class="person-row">
     <span><b>{{ u.name }}</b><span class="muted small">{{ _('설치업자') }}{% if is_office and u.phone_e164 %} · <a href="tel:{{ u.phone_e164 }}">{{ u.phone_e164|phone }}</a>{% endif %}</span></span>
@@ -161,72 +255,40 @@
   {% else %}
     <p class="muted small">{{ _('아직 배정된 설치업자가 없습니다. 설치업자는 배정된 프로젝트만 볼 수 있습니다.') }}</p>
   {% endfor %}
-  {% if is_office and house.landlord_name %}
-  <div class="person-row"><span><b>{{ house.landlord_name }}</b><span class="muted small">{{ _('집주인') }}{% if house.landlord_phone %} · <a href="tel:{{ house.landlord_phone }}">{{ house.landlord_phone }}</a>{% endif %}{% if house.landlord_email %} · <a href="mailto:{{ house.landlord_email }}">{{ house.landlord_email }}</a>{% endif %}</span></span><span class="tag">{{ _('회사 전용') }}</span></div>
-  {% endif %}
   {% if is_office and candidates %}
   <form method="post" action="/houses/{{ house.id }}/members" class="row assign-row">
-    <select name="user_id" aria-label="{{ _('설치업자') }}">
-      {% for u in candidates %}<option value="{{ u.id }}">{{ u.name }}</option>{% endfor %}
+    <select name="user_id" aria-label="{{ _('설치업자') }}" required>
+      <option value="">{{ _('설치업자 선택') }}</option>
+      {% for u in candidates %}<option value="{{ u.id }}">{{ u.name }}{% if not u.fgas_ok %} · {{ _('현장조사만 (F-Gas 승인 전)') }}{% endif %}</option>{% endfor %}
     </select>
     <button class="btn">{{ _('배정') }}</button>
   </form>
   {% endif %}
-  {% if is_office and house.memo %}<p class="memo small">{{ house.memo }}</p>{% endif %}
 </section>
 
-<section class="card" id="docs">
-  <div class="q-head"><h2>{{ _('자료') }}</h2><a class="btn small" href="/houses/{{ house.id }}/docs">{{ _('+ 올리기') if is_office else _('자료함 열기') }}</a></div>
-  {% set ready = doc_required.values()|select|list|length == doc_required|length %}
-  <div class="pack-box {{ 'ready' if ready else 'missing' }}">
-    <b>{{ _('시공 시작 준비 완료 ✓') if ready else _('1차 시공 전 필수 자료가 아직 다 없습니다') }}</b>
-    <div>{% for k, ok in doc_required.items() %}<span>{{ '✓' if ok else '○' }} {{ _(C_REQUIRED[k]) }}</span>{% endfor %}</div>
-  </div>
-  {% for d in docs[:6] %}
-  <a class="line-row" href="/houses/{{ house.id }}/docs/{{ d.id }}">
-    <span><b>{{ d.title }}</b> <span class="muted small">v{{ d.version }}</span></span>
-    {% if is_office %}
-      {% set acks = doc_acks.get(d.id, []) %}{% set checked = acks|selectattr('at')|list|length %}
-      <span class="tag {{ 'ok' if acks and checked == acks|length else 'warn' }}">{{ _('확인 {a}/{b}', a=checked, b=acks|length) }}</span>
-    {% elif d.my_ack %}<span class="tag ok">{{ _('확인함') }}</span>{% else %}<span class="tag new">NEW</span>{% endif %}
-  </a>
-  {% else %}<p class="muted small">{{ _('아직 올린 자료가 없습니다.') }}</p>{% endfor %}
-  <p class="muted small">{{ _('가격 정보는 공유되지 않습니다.') }}</p>
+{% if is_office and (house.landlord_name or house.landlord_phone or house.landlord_email or house.memo) %}
+<section class="card" id="landlord">
+  <div class="q-head"><h2>{{ _('집주인') }}</h2><span class="tag">{{ _('회사 전용') }}</span></div>
+  {% if house.landlord_name or house.landlord_phone or house.landlord_email %}
+  <div class="person-row"><span><b>{{ house.landlord_name or '—' }}</b><span class="muted small">{% if house.landlord_phone %}<a href="tel:{{ house.landlord_phone }}">{{ house.landlord_phone }}</a>{% endif %}{% if house.landlord_email %} · <a href="mailto:{{ house.landlord_email }}">{{ house.landlord_email }}</a>{% endif %}</span></span></div>
+  {% endif %}
+  {% if house.memo %}<p class="memo small">{{ house.memo }}</p>{% endif %}
 </section>
-
-</aside>
+{% endif %}
 </div>
 
+<div class="tab-panel" id="tab-log">
 {% if new_logs %}
 <a class="new-notice" href="?tab=all#timeline">
   <span class="new-badge">N</span> {{ _('마지막으로 확인한 뒤 새 소식 {n}건', n=new_logs|length) }} <span class="arrow">↓</span>
 </a>
 {% endif %}
 
-{% if writable %}
-{% set open_form = tab if tab in writable else writable[0] %}
-<section class="card" id="new">
-  <h2>{{ _('새 기록 작성') }}</h2>
-  <div class="tabs" role="tablist">
-    {% for t in writable %}
-      <button type="button" class="tab {% if t == open_form %}active{% endif %}" data-target="form-{{ t }}">{{ _(ENTRY_TYPES[t]) }}</button>
-    {% endfor %}
-  </div>
-  {% for t in writable %}
-    <form id="form-{{ t }}" class="stack entry-form {% if t != open_form %}hidden{% endif %}"
-          method="post" action="/houses/{{ house.id }}/entries/{{ t }}" enctype="multipart/form-data" {{ m.upload_attrs(house.id) }}>
-      {{ m.entry_inputs(t) }}
-      {{ m.file_input() }}
-      <button class="btn primary">{{ _('{type} 저장', type=_(ENTRY_TYPES[t])) }}</button>
-    </form>
-  {% endfor %}
-</section>
-{% endif %}
 
 <section id="timeline">
   <div class="tabs links">
     <a class="tab {% if tab == 'all' %}active{% endif %}" href="?tab=all">{{ _('전체') }}</a>
-    {% for t in types %}
+    {% for t in types if type_counts[t] %}
       <a class="tab {% if tab == t %}active{% endif %}" href="?tab={{ t }}">{{ _(ENTRY_TYPES[t]) }} <b>{{ type_counts[t] }}</b></a>
     {% endfor %}
     <a class="tab {% if tab == 'status' %}active{% endif %}" href="?tab=status">{{ _('단계 변경') }}</a>
@@ -236,7 +298,7 @@
   {% if tab != 'history' %}
   <form class="inline-search" method="get">
     <input type="hidden" name="tab" value="{{ tab }}">
-    <input type="search" name="q" value="{{ q }}" placeholder="{{ _('이 현장 기록 안에서 검색 (내용, 첨부파일명, 작성자)') }}">
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ _('이 프로젝트 기록 안에서 검색 (내용, 첨부파일명, 작성자)') }}">
     <button class="btn">{{ _('검색') }}</button>
     {% if q %}<a class="small" href="?tab={{ tab }}">{{ _('지우기') }}</a>{% endif %}
   </form>
@@ -277,12 +339,30 @@
     {% endfor %}
   {% endif %}
 </section>
+</div>
 
 <script>
-  document.querySelectorAll('#new .tab').forEach(btn => btn.addEventListener('click', () => {
-    document.querySelectorAll('#new .tab').forEach(b => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('#new .entry-form').forEach(f => f.classList.toggle('hidden', f.id !== btn.dataset.target));
-  }));
+  // 탭: 기본은 일정 (기록 검색·필터 중이면 기록). 주소 끝 #아이디가 어느 탭 안에 있으면 그 탭을 연다.
+  (function () {
+    const panels = [...document.querySelectorAll('.tab-panel')], tabs = [...document.querySelectorAll('.ptab')];
+    const show = (name, scrollTo) => {
+      panels.forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+      tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+      if (scrollTo) scrollTo.scrollIntoView({block: 'start'});
+    };
+    tabs.forEach(t => t.addEventListener('click', () => { show(t.dataset.tab); history.replaceState(null, '', '#tab-' + t.dataset.tab); }));
+    const openHash = () => {
+      const id = decodeURIComponent(location.hash.slice(1));
+      if (id.startsWith('tab-') && document.getElementById(id)) return show(id.slice(4));
+      const el = id && document.getElementById(id), panel = el && el.closest('.tab-panel');
+      if (panel) { show(panel.id.slice(4), el); if (el.tagName === 'DETAILS') el.open = true; return; }
+      show(document.querySelector('.project-tabs').dataset.default);
+    };
+    window.addEventListener('hashchange', openHash);
+    document.querySelectorAll('a[href^="#"]').forEach(a => a.addEventListener('click', () => setTimeout(openHash, 0)));
+    openHash();
+  })();
 </script>
 <script src="/static/upload.js"></script>
+<script src="/static/pay.js"></script>
 {% endblock %}

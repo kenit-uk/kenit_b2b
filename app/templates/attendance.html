@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ _('출결 기록') }} · {{ target.name }}{% endblock %}
+{% block main_class %}container wide{% endblock %}
+{% block content %}
+<a class="back" href="/users/installers">← {{ _('설치업자 관리') }}</a>
+<div class="page-head">
+  <div><h1>{{ _('{name} 출결 기록', name=target.name) }}</h1>
+    <p class="muted small">{{ _('도착·종료 시각은 서버가 받은 시각이라 고칠 수 없습니다. 지각 = 예약 시작보다 {m}분 넘게 늦음 · 위치 이상 = 현장에서 {d}m 넘게 떨어진 곳에서 도착을 누름', m=LATE_MIN, d=FAR_M) }}</p></div>
+  <div class="seg">{% for d in (30, 90, 365) %}<a class="{% if d == days %}active{% endif %}" href="?days={{ d }}">{{ _('최근 {n}일', n=d) }}</a>{% endfor %}</div>
+</div>
+
+<div class="att-stats">
+  <div><b>{{ summary.visits }}</b><span>{{ _('지난 방문') }}</span></div>
+  <div class="ok"><b>{{ summary.on_time }}</b><span>{{ _('정시 도착') }}</span></div>
+  <div class="{{ 'warn' if summary.late }}"><b>{{ summary.late }}</b><span>{{ _('지각') }}{% if summary.late %} · {{ _('평균 {n}분', n=summary.late_avg) }}{% endif %}</span></div>
+  <div class="{{ 'bad' if summary.no_show }}"><b>{{ summary.no_show }}</b><span>{{ _('노쇼') }}</span></div>
+  <div class="{{ 'warn' if summary.far }}"><b>{{ summary.far }}</b><span>{{ _('현장과 떨어진 도착') }}</span></div>
+  <div class="{{ 'warn' if summary.no_loc or summary.no_arrival }}"><b>{{ summary.no_loc + summary.no_arrival }}</b><span>{{ _('위치 없음·도착 기록 빠짐') }}</span></div>
+</div>
+
+<section class="card">
+  <table class="history stackable att-table">
+    <thead><tr><th>{{ _('예약') }}</th><th>{{ _('프로젝트') }}</th><th>{{ _('도착') }}</th><th>{{ _('위치') }}</th><th>{{ _('종료') }}</th><th>{{ _('작업 시간') }}</th><th>{{ _('상태') }}</th></tr></thead>
+    <tbody>
+    {% for v, a in rows %}
+      <tr class="att-{{ a.status }}">
+        <td data-label="{{ _('예약') }}"><b>{{ v.date }}</b> {{ v.start_time or '' }}{% if v.end_time %}–{{ v.end_time }}{% endif %}<br><span class="muted small">{{ _(vlabel(v)) }}</span></td>
+        <td data-label="{{ _('프로젝트') }}"><a href="/visits/{{ v.id }}">{{ v.address.split(',')[0] }}</a><br><span class="ref-no muted small">{{ v.ref_no }}</span></td>
+        <td data-label="{{ _('도착') }}">{% if a.arrived_at %}{{ a.arrived_at.strftime('%H:%M') }}{% if a.late_min is not none %} <span class="small {{ 'bad-text' if a.late_min > LATE_MIN else 'muted' }}">({{ '+' if a.late_min >= 0 else '' }}{{ a.late_min }}{{ _('분') }})</span>{% endif %}{% else %}—{% endif %}</td>
+        <td data-label="{{ _('위치') }}">
+          {% if a.loc == 'ok' %}<span class="tag ok">{{ _('현장') }} · {{ a.distance }}m</span>
+          {% elif a.loc == 'far' %}<span class="tag bad">{{ _('떨어짐') }} · {{ '%.1f'|format(a.distance / 1000) }}km</span>
+          {% elif a.loc == 'none' %}<span class="tag warn">{{ _('위치 없음') }}</span>
+          {% elif a.loc == 'unknown' %}<span class="muted small">{{ _('현장 좌표 모름') }}</span>{% else %}—{% endif %}
+          {% if a.arrive and a.arrive.lat is not none %}<a class="small" href="https://www.google.com/maps?q={{ a.arrive.lat }},{{ a.arrive.lng }}" target="_blank" rel="noopener">{{ _('지도') }}</a>{% endif %}
+        </td>
+        <td data-label="{{ _('종료') }}">{{ a.finished_at.strftime('%H:%M') if a.finished_at else '—' }}</td>
+        <td data-label="{{ _('작업 시간') }}">{% if a.worked_min is not none %}{{ a.worked_min // 60 }}{{ _('시간') }} {{ a.worked_min % 60 }}{{ _('분') }}{% else %}—{% endif %}</td>
+        <td data-label="{{ _('상태') }}"><span class="tag {{ 'ok' if a.status == 'on_time' else 'bad' if a.status in ('no_show', 'not_arrived') else 'warn' if a.status == 'late' else '' }}">{{ _(STATUS_LABELS.get(a.status, '—')) }}</span></td>
+      </tr>
+    {% else %}<tr><td colspan="7" class="muted">{{ _('이 기간에 방문이 없습니다.') }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

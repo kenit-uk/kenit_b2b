@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Request
 from starlette.exceptions import HTTPException
 
 from . import constants as C
+from . import survey_options as SO
 from .auth import current_user, office_user
 from .db import audit, get_db, now
 from .main import flash, form_str, get_house_or_404, is_office, redirect, render
@@ -18,7 +19,7 @@ from .main import flash, form_str, get_house_or_404, is_office, redirect, render
 router = APIRouter()
 
 ROOM_FIELDS = ("indoor_type", "kw", "model", "location", "memo")
-ACC_FIELDS = ("controls", "lcd_colour", "grille", "plenum", "hatch", "extra")
+ACC_FIXED = ("controls", "lcd_colour")      # 나머지 액세서리 항목은 관리자 설정에 따라 다르다
 ODU_FIELDS = ("mount", "model", "note")
 COMMON_FIELDS = ("system", "pipe_ok", "power_near", "electric_work", "trunking", "trunking_colour", "trunking_other", "access")
 
@@ -40,7 +41,8 @@ def diff_scopes(old: dict, new: dict) -> dict:
         orr = old_rooms[idx]
         ch = [(f, orr.get(f), nr.get(f)) for f in ROOM_FIELDS if _norm(orr.get(f)) != _norm(nr.get(f))]
         oa, na = orr.get("acc") or {}, nr.get("acc") or {}
-        ch += [(f, oa.get(f), na.get(f)) for f in ACC_FIELDS if _norm(oa.get(f)) != _norm(na.get(f))]
+        acc_fields = [*ACC_FIXED, *[k for k in dict.fromkeys([*oa, *na]) if k not in (*ACC_FIXED, "extra")], "extra"]
+        ch += [(f, oa.get(f), na.get(f)) for f in acc_fields if _norm(oa.get(f)) != _norm(na.get(f))]
         rooms.append({"status": "changed" if ch else "same", "room": nr, "changes": ch})
     removed = [o for i, o in enumerate(old_rooms) if i not in used]
     odus = []
@@ -175,21 +177,22 @@ def scope_edit_page(request: Request, house_id: int, user=Depends(office_user), 
     return render(request, "scope_edit.html", user=user, house=house, data=data, last=last, C=C)
 
 
-def _parse_scope_form(form) -> dict:
+def _parse_scope_form(form, opts: dict) -> dict:
     rooms = []
     i = 0
     while f"r{i}_name" in form:
         name = form_str(form, f"r{i}_name", 80)
         if name and form.get(f"r{i}_remove") != "1":
             pick = lambda k, choices: (lambda v: v if v in choices else None)(form_str(form, f"r{i}_{k}", 20))
-            controls = [c for c in form.getlist(f"r{i}_controls") if c in C.CONTROLS]
+            controls = [c for c in form.getlist(f"r{i}_controls") if c in {o["key"] for o in opts["controls"]}]
             rooms.append({
                 "name": name, "indoor_type": pick("indoor_type", C.INDOOR_TYPES), "kw": pick("kw", C.KW_OPTIONS),
                 "model": form_str(form, f"r{i}_model", 80), "location": form_str(form, f"r{i}_location", 200),
                 "memo": form_str(form, f"r{i}_memo", 2000),
-                "acc": {"controls": controls, "lcd_colour": pick("lcd_colour", C.LCD_COLOURS) if "lcd" in controls else None,
-                        "grille": pick("grille", C.INCLUDE_CHOICES), "plenum": pick("plenum", C.INCLUDE_CHOICES),
-                        "hatch": pick("hatch", C.HATCH_CHOICES), "extra": form_str(form, f"r{i}_extra", 500) or None},
+                "acc": {"controls": controls,
+                        "lcd_colour": pick("lcd_colour", {o["key"] for o in opts["lcd_colours"]}) if "lcd" in controls else None,
+                        **{it["key"]: pick(it["key"], SO.ANSWERS[it["answers"]]) for it in opts["items"] if f"r{i}_{it['key']}" in form},
+                        "extra": form_str(form, f"r{i}_extra", 500) or None},
             })
         i += 1
     odus = []
@@ -215,7 +218,7 @@ async def scope_save(request: Request, house_id: int, user=Depends(office_user),
     if is_locked(conn, house_id):
         raise HTTPException(400, "확정된 작업 범위는 변경 요청(VO)으로만 바꿀 수 있습니다.")
     form = await request.form()
-    data = _parse_scope_form(form)
+    data = _parse_scope_form(form, SO.load(conn))
     summary = form_str(form, "summary", 500)
     last = latest_scope(conn, house_id)
     error = None
@@ -233,6 +236,8 @@ async def scope_save(request: Request, house_id: int, user=Depends(office_user),
         conn.insert("""INSERT INTO scope_versions (house_id, version, data, note, created_by, created_at)
                        VALUES (?, ?, ?, ?, ?, ?)""", (house_id, version, json.dumps(data), summary, user["id"], now()))
         audit(conn, house_id=house_id, actor_id=user["id"], action="scope_create", detail=str(version))
+        from .main import advance_stage
+        advance_stage(conn, house_id, C.QUOTE_STAGE, user["id"])
     flash(request, "작업 범위 v{n}을 만들었습니다. 배정된 설치업자에게 변경 알림이 갑니다.", n=version)
     return redirect(f"/houses/{house_id}/scope/{version}")
 
@@ -250,8 +255,7 @@ def scope_lock(request: Request, house_id: int, version: int, user=Depends(offic
     with conn:
         conn.execute("UPDATE scope_versions SET locked_at = ?, locked_by = ? WHERE id = ?", (ts, user["id"], last["id"]))
         audit(conn, house_id=house_id, actor_id=user["id"], action="scope_lock", detail=str(version))
-        if house["stage"] < 4:
-            conn.execute("UPDATE houses SET stage = 4, updated_by = ?, updated_at = ? WHERE id = ?", (user["id"], ts, house_id))
-            audit(conn, house_id=house_id, actor_id=user["id"], action="stage", detail=f"{house['stage']} → 4")
+        from .main import advance_stage
+        advance_stage(conn, house_id, C.PREP_STAGE, user["id"])
     flash(request, "작업 범위 v{n}을 확정했습니다. 이후 변경은 변경 요청(VO)으로만 할 수 있습니다.", n=version)
     return redirect(f"/houses/{house_id}/scope/{version}")

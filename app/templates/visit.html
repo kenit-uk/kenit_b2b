@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% import "_survey.html" as s with context %}
 {% import "_macros.html" as m with context %}
-{% block title %}{{ visit.address }} · {{ _(C.VISIT_KINDS[visit.kind]) }}{% endblock %}
+{% block title %}{{ visit.address }} · {{ _(vlabel(visit)) }}{% endblock %}
 {% block content %}
 {% set mine = visit.installer_id == user.id %}
 <header class="site-head">
   <div class="site-top">
-    <a class="back-btn dark" href="{{ '/today' if not is_office else '/houses/' ~ visit.house_id }}">‹</a>
-    <div><h1>{{ visit.address.split(',')[0] }}</h1><span>{{ _(C.VISIT_KINDS[visit.kind]) }}{% if visit.date %} · {{ visit.date }}{% endif %}{% if is_office %} · {{ visit.installer_name }}{% endif %}</span></div>
+    <a class="back-btn dark" href="/houses/{{ visit.house_id }}">‹</a>
+    <div><h1>{{ visit.address.split(',')[0] }}</h1><span>{{ _(vlabel(visit)) }}{% if visit.date %} · {{ visit.date }}{% endif %}{% if is_office %} · {{ visit.installer_name }}{% endif %}</span></div>
     <a class="docs-btn" href="/houses/{{ visit.house_id }}/docs">📄 {{ _('자료') }}{% if new_docs %}<b>{{ new_docs }}</b>{% endif %}</a>
   </div>
   {% if arrived %}
@@ -16,7 +16,10 @@
   {% endif %}
 </header>
 
-{% if mine and not arrived and visit.status == 'confirmed' %}
+{% if mine and not arrived and visit.status == 'confirmed' and not is_today %}
+<p class="card muted small">{{ _('현장 도착은 방문일({date})에 누를 수 있습니다.', date=visit.date or '—') }}</p>
+{% endif %}
+{% if mine and not arrived and visit.status == 'confirmed' and is_today %}
 <form method="post" action="/visits/{{ visit.id }}/arrive" class="arrive-form">
   <input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="accuracy">
   <button class="btn primary block big">📍 {{ _('현장 도착') }}</button>
@@ -44,7 +47,7 @@
 
 <div class="site-actions">
   <a class="act problem" href="#problem" onclick="document.getElementById('problem').classList.remove('hidden')">⚠<span>{{ _('문제') }}</span></a>
-  <a class="act change" href="/houses/{{ visit.house_id }}/variations?visit={{ visit.id }}">✎<span>{{ _('변경 필요') }}</span></a>
+  <a class="act change" href="/houses/{{ visit.house_id }}/variations?visit={{ visit.id }}">✎<span>{{ _('변경 요청') }}</span></a>
   <a class="act" href="#message" onclick="document.getElementById('message').classList.remove('hidden')">💬<span>{{ _('회사') }}</span></a>
 </div>
 {% for kind, label, ph in (('problem', '문제 보고', '예: 벽 속에 장애물이 있어요'), ('message', '회사에 메시지', '회사에 전할 말')) %}
@@ -58,7 +61,37 @@
 {% endfor %}
 {% endif %}
 
-<div class="q-head" id="photos"><h2>{{ _('오늘 사진') }}</h2><span class="muted small">{{ _('{n}장', n=photos|length) }}</span></div>
+{% if att and att.status %}
+<section class="card att-card">
+  <div class="q-head"><h2>{{ _('출결') }}</h2><span class="tag {{ 'ok' if att.status == 'on_time' else 'bad' if att.status in ('no_show', 'not_arrived') else 'warn' if att.status == 'late' else '' }}">{{ _(ATT_LABELS.get(att.status, '')) }}</span></div>
+  <dl class="kv">
+    <div><dt>{{ _('예약') }}</dt><dd>{{ visit.date or '—' }} {{ visit.start_time or '' }}{% if visit.end_time %}–{{ visit.end_time }}{% endif %}</dd></div>
+    <div><dt>{{ _('도착') }}</dt><dd>{% if att.arrived_at %}{{ att.arrived_at.strftime('%H:%M') }}{% if att.late_min is not none %} <span class="{{ 'bad-text' if att.late_min > LATE_MIN else 'muted' }}">({{ '+' if att.late_min >= 0 else '' }}{{ att.late_min }}{{ _('분') }})</span>{% endif %}{% else %}—{% endif %}</dd></div>
+    <div><dt>{{ _('도착 위치') }}</dt><dd>
+      {% if att.loc == 'ok' %}<span class="tag ok">{{ _('현장') }} · {{ att.distance }}m</span>
+      {% elif att.loc == 'far' %}<span class="tag bad">{{ _('현장과 떨어짐') }} · {{ '%.1f'|format(att.distance / 1000) }}km</span>
+      {% elif att.loc == 'none' %}<span class="tag warn">{{ _('위치 없음') }}</span>
+      {% elif att.loc == 'unknown' %}<span class="muted">{{ _('현장 좌표 모름 (우편번호 확인)') }}</span>{% else %}—{% endif %}
+      {% if att.arrive and att.arrive.lat is not none %} <a href="https://www.google.com/maps?q={{ att.arrive.lat }},{{ att.arrive.lng }}" target="_blank" rel="noopener">{{ _('지도') }}</a>{% endif %}</dd></div>
+    <div><dt>{{ _('종료') }}</dt><dd>{{ att.finished_at.strftime('%H:%M') if att.finished_at else '—' }}{% if att.worked_min is not none %} · {{ att.worked_min // 60 }}{{ _('시간') }} {{ att.worked_min % 60 }}{{ _('분') }}{% endif %}</dd></div>
+  </dl>
+  <p class="muted small"><a href="/users/{{ visit.installer_id }}/attendance">{{ _('{name} 출결 기록 전체', name=visit.installer_name) }} ›</a></p>
+</section>
+{% endif %}
+
+{% for r in reports %}
+<section class="card report-card {{ 'is-problem' if r.has_problem else '' }}">
+  <div class="q-head"><h2>{{ _('작업 끝 보고') }}</h2>
+    <span class="tag {{ 'bad' if r.has_problem else 'ok' }}">{{ _('문제 있음') if r.has_problem else _('문제 없음') }}</span></div>
+  <p class="muted small">{{ r.author_name }} · {{ r.created_at|dt }}{% if r.reviewed_at %} · {{ _('{who} 확인 {when}', who=r.reviewer_name, when=r.reviewed_at|dt) }}{% else %} · {{ _('회사 확인 전') }}{% endif %}</p>
+  {% set w = r.work|fromjson %}
+  {% if w %}<p>{% for k in w %}<span class="tag">{{ _(work_labels.get(k, k)) }}</span> {% endfor %}</p>{% endif %}
+  {% if r.note %}<p class="body">{{ r.note }}</p>{% endif %}
+  {{ s.media_grid(report_media.get(r.id, [])) }}
+</section>
+{% endfor %}
+
+<div class="q-head" id="photos"><h2>{{ _('오늘 사진') if is_today else _('방문 사진') }}</h2><span class="muted small">{{ _('{n}장', n=photos|length) }}</span></div>
 {% if photos %}
 <form method="post" action="/visits/{{ visit.id }}/photos" class="photo-tags">
   <div class="photo-grid">
@@ -82,7 +115,7 @@
 {% for x in variations[:3] %}<a class="card var-row st-{{ x.status }}" href="/houses/{{ visit.house_id }}/variations"><b>VO-{{ x.number }} · {{ _(C.VARIATION_KINDS[x.kind]) }}</b><span class="var-badge st-{{ x.status }}">{{ _(C.VARIATION_STATUS[x.status]) }}</span></a>{% endfor %}
 {% endif %}
 
-{% if mine and arrived and visit.status != 'done' %}
+{% if mine and visit.kind != 'survey' and visit.status == 'confirmed' and (arrived or (visit.date and not is_today and visit.date < today_iso)) %}
 <div class="sticky-actions"><a class="btn dark block big" href="/visits/{{ visit.id }}/finish">✓ {{ _('오늘 작업 끝') }}</a></div>
 {% endif %}
 <script src="/static/upload.js"></script>

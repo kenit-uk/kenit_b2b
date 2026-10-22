@@ -5,7 +5,9 @@
 {% set ids = rooms|map(attribute='id')|list %}
 {% set idx = ids.index(room.id) %}
 {% set acc = accs[room.id] %}
-{% set tdef = C.ACC_DEFAULTS.get(room.indoor_type or 'wall', {}) %}
+{% set itype = room.indoor_type or 'wall' %}
+{% set ctrl = {} %}{% for o in SOV.controls if o.active %}{% set _x = ctrl.update({o.key: o.label}) %}{% endfor %}
+{% set lcds = {} %}{% for o in SOV.lcd_colours if o.active %}{% set _x = lcds.update({o.key: o.label}) %}{% endfor %}
 {{ s.flow_head('/houses/' ~ house.id ~ '/survey/rooms/' ~ room.id,
                room.name ~ ' · ' ~ (_(C.INDOOR_TYPES[room.indoor_type]) if room.indoor_type else _('형태 미선택')) ~ (' · ' ~ _(C.KW_OPTIONS[room.kw]) if room.kw else ''),
                _('액세서리·부가 사항'), steps=rooms|length * 2 + 1, current=idx * 2 + 1) }}
@@ -20,24 +22,28 @@
 
   <div class="card q-card">
     <div class="q-head"><h3>{{ _('온도 컨트롤 방식') }}</h3><span class="muted small">{{ _('복수 선택 가능') }}</span></div>
-    {{ s.checks('controls', C.CONTROLS, acc.controls or []) }}
+    {{ s.checks('controls', ctrl, acc.controls or []) }}
 
     <div class="lcd-colour">
       <h3>{{ _('벽부착 LCD 색상') }}</h3>
-      {{ s.choices('lcd_colour', C.LCD_COLOURS, acc.lcd_colour) }}
+      {{ s.choices('lcd_colour', lcds, acc.lcd_colour) }}
     </div>
 
-    {% for key, label, opts in (('grille', '그릴 (Grille)', C.INCLUDE_CHOICES), ('plenum', '플레넘 (Plenum)', C.INCLUDE_CHOICES), ('hatch', '점검구 (Access hatch)', C.HATCH_CHOICES)) %}
-    <div class="q-head"><h3>{{ _(label) }}</h3>
-      {% if tdef.get(key) == 'na' %}<span class="muted small">{{ _('{type}: 보통 필요 없음', type=_(C.INDOOR_TYPES[room.indoor_type or 'wall'])) }}</span>
-      {% elif tdef.get(key) is none %}<span class="must small">{{ _('꼭 확인') }}</span>{% endif %}
+    {% for it in SOV.acc_items if it.active %}
+    {% set tdef = (it.defaults or {}).get(itype) %}
+    <div class="q-head"><h3>{{ it.label }}</h3>
+      {% if tdef == 'na' %}<span class="muted small">{{ _('{type}: 보통 필요 없음', type=_(C.INDOOR_TYPES[itype])) }}</span>
+      {% elif tdef is none %}<span class="must small">{{ _('꼭 확인') }}</span>{% endif %}
     </div>
-    {{ s.choices(key, opts, acc[key], default=none if key in (room.acc|fromjson) else tdef.get(key)) }}
+    {{ s.choices(it.key, it.choices, acc[it.key], default=none if it.key in (room.acc|fromjson) else tdef) }}
     {% endfor %}
 
     <p class="muted small">{{ _('트렁킹은 방마다 묻지 않고, 실외기 화면에서 프로젝트 전체로 한 번만 확인합니다.') }}</p>
 
     <h3>{{ _('기타 부가 사항') }}</h3>
+    {% if SOV.extras|selectattr('active')|list %}
+    <div class="extra-chips">{% for o in SOV.extras if o.active %}<button type="button" class="chip" data-add="{{ o.label }}">+ {{ o.label }}</button>{% endfor %}</div>
+    {% endif %}
     <textarea name="extra" rows="2" placeholder="{{ _('예: 콘센트 추가 필요') }}">{{ acc.extra or '' }}</textarea>
   </div>
 
@@ -52,8 +58,13 @@
   // LCD를 고른 경우에만 색상 질문을 보여준다
   (function () {
     const f = document.querySelector('.acc-form'), box = f.querySelector('.lcd-colour');
-    const sync = () => box.classList.toggle('hidden', !f.querySelector('input[name=controls][value=lcd]').checked);
+    const sync = () => { const l = f.querySelector('input[name=controls][value=lcd]'); box.classList.toggle('hidden', !(l && l.checked)); };
     f.addEventListener('change', sync); sync();
+    // 자주 쓰는 부가 사항을 눌러 메모에 붙이기
+    const ta = f.querySelector('textarea[name=extra]');
+    f.querySelectorAll('.extra-chips [data-add]').forEach(b => b.addEventListener('click', () => {
+      const t = b.dataset.add; if (!ta.value.includes(t)) ta.value = ta.value ? ta.value.replace(/\s+$/, '') + ', ' + t : t;
+    }));
   })();
 </script>
 {% endblock %}

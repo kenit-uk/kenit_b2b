@@ -24,14 +24,17 @@
     </div>
     <div class="grid-4">
       <label>{{ _('설치 위치') }}<input name="r{{ i }}_location" value="{{ r.location or '' }}" placeholder="{{ _('예: 창문 위') }}"></label>
-      <label>{{ _('그릴') }}{{ sel('r' ~ i ~ '_grille', C.INCLUDE_CHOICES, acc.grille) }}</label>
-      <label>{{ _('플레넘') }}{{ sel('r' ~ i ~ '_plenum', C.INCLUDE_CHOICES, acc.plenum) }}</label>
-      <label>{{ _('점검구') }}{{ sel('r' ~ i ~ '_hatch', C.HATCH_CHOICES, acc.hatch) }}</label>
+    </div>
+    <div class="grid-4">
+      {% for it in SOV.acc_items if it.active or acc.get(it.key) is not none %}
+      <label>{{ it.label }}{{ sel('r' ~ i ~ '_' ~ it.key, it.choices, acc.get(it.key)) }}</label>
+      {% endfor %}
     </div>
     <div class="row wrap">
       <span class="small muted">{{ _('온도 컨트롤') }}</span>
-      {% for k, label in C.CONTROLS.items() %}<label class="check"><input type="checkbox" name="r{{ i }}_controls" value="{{ k }}" {% if k in (acc.controls or []) %}checked{% endif %}> {{ _(label) }}</label>{% endfor %}
-      <label class="inline">{{ _('LCD 색상') }} {{ sel('r' ~ i ~ '_lcd_colour', C.LCD_COLOURS, acc.lcd_colour) }}</label>
+      {% for o in SOV.controls if o.active or o.key in (acc.controls or []) %}<label class="check"><input type="checkbox" name="r{{ i }}_controls" value="{{ o.key }}" {% if o.key in (acc.controls or []) %}checked{% endif %}> {{ o.label }}</label>{% endfor %}
+      {% set lcds = {} %}{% for o in SOV.lcd_colours if o.active or o.key == acc.lcd_colour %}{% set _x = lcds.update({o.key: o.label}) %}{% endfor %}
+      <label class="inline">{{ _('LCD 색상') }} {{ sel('r' ~ i ~ '_lcd_colour', lcds, acc.lcd_colour) }}</label>
     </div>
     <div class="grid-2">
       <label>{{ _('기타 부가 사항') }}<input name="r{{ i }}_extra" value="{{ acc.extra or '' }}"></label>

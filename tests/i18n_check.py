@@ -11,7 +11,7 @@ for p in glob.glob("app/templates/*.html"):
     keys |= set(re.findall(r"_\(\s*'([^']*)'", t)) | set(re.findall(r'_\(\s*"([^"]*)"', t))
     keys |= set(re.findall(r"\('([^']*[가-힣][^']*)', ", t))
 import os
-for p in ["app/main.py", "app/sms.py", "app/survey.py", "app/scope.py", "app/documents.py", "app/visits.py", "app/approvals.py", "app/account.py"]:
+for p in ["app/main.py", "app/sms.py", "app/survey.py", "app/scope.py", "app/documents.py", "app/visits.py", "app/approvals.py", "app/account.py", "app/nextstep.py", "app/licences.py", "app/survey_options.py", "app/payments.py", "app/attendance.py"]:
     if not os.path.exists(p):
         continue
     src = open(p).read()
@@ -19,6 +19,7 @@ for p in ["app/main.py", "app/sms.py", "app/survey.py", "app/scope.py", "app/doc
     keys |= set(re.findall(r'\("([^"]*[가-힣][^"]*)", "[a-z.]', src))
     keys |= set(re.findall(r'(?:if kind == "login"\s*else |translate\(lang, )"([^"]*[가-힣][^"]*)"', src))
     keys |= set(re.findall(r'(?:error = |raise UserError\(|raise HTTPException\(\d+, |out\.append\()"([^"]*[가-힣][^"]*)"', src))
+    keys |= set(re.findall(r'(?:\bstep\(|\blink\(|\bpost\(|"key": |"label": )"([^"]*[가-힣][^"]*)"', src))   # 다음 할 일·예약 경고
 for d in (C.DOC_CATEGORIES, C.REQUIRED_DOCS, C.VISIT_KINDS, C.VISIT_STATUS, C.WORK_DONE, C.VARIATION_KINDS,
           C.VARIATION_STATUS, C.MESSAGE_KINDS, C.INDOOR_TYPES, C.KW_OPTIONS, C.CONTROLS, C.LCD_COLOURS, C.INCLUDE_CHOICES, C.HATCH_CHOICES, C.ODU_MOUNTS,
           C.SYSTEMS, C.YES_NO, C.NEEDED, C.TRUNKING, C.TRUNKING_COLOURS, C.ACCESS, C.SURVEY_STATUS, C.STAGES):

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ _('정산·결제 관리') }} · {{ BRAND }}{% endblock %}
+{% block main_class %}container wide{% endblock %}
+{% block content %}
+<p class="crumb small muted">{{ _('프로젝트 관리') }}</p>
+<div class="page-head"><h1>{{ _('정산·결제 관리') }}</h1></div>
+<p class="muted small">{{ _('계약금·중도금·잔금을 받으면 여기서 표시합니다. 회계 프로그램(Xero 등) 연동은 다음 단계입니다. 설치업자에게는 보이지 않습니다.') }}</p>
+
+<section class="card">
+  <h2>{{ _('프로젝트별 결제') }}</h2>
+  <table class="history stackable pay-table">
+    <thead><tr><th>{{ _('프로젝트') }}</th><th>{{ _('단계') }}</th><th>{{ _('총액') }}</th>{% for k, lab in C.PAYMENT_KINDS.items() %}<th>{{ _(lab) }}</th>{% endfor %}<th>{{ _('받음 / 남음') }}</th><th>{{ _('지금 막힌 것') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for h in houses %}{% set sm = sums[h.id] %}
+      <tr id="h-{{ h.id }}">
+        <td class="cell-title" data-label="{{ _('프로젝트') }}"><a href="/houses/{{ h.id }}">{{ h.address.split(',')[0] }}</a><br><span class="ref-no muted small">{{ h.ref_no }}</span></td>
+        <td data-label="{{ _('단계') }}">{{ h.stage }} · {{ _(STAGES[h.stage]) }}{% if h.on_hold %} <span class="tag bad">{{ _('보류') }}</span>{% endif %}</td>
+        <td data-label="{{ _('총액') }}">{% if sm.total is not none %}<b>£{{ sm.total|money }}</b>{% else %}<span class="muted">{{ _('미입력') }}</span>{% endif %}</td>
+        {% for k in C.PAYMENT_KINDS %}<td data-label="{{ _(C.PAYMENT_KINDS[k]) }}">{{ m.pay_cell(sm.pays[k], sm.amount[k]) }}</td>{% endfor %}
+        <td data-label="{{ _('받음 / 남음') }}">{% if sm.total is not none %}<span class="ok-text">£{{ sm.received|money }}</span> / <b>£{{ sm.remaining|money }}</b>{% else %}—{% endif %}</td>
+        <td data-label="{{ _('지금 막힌 것') }}">{% if blocked[h.id] %}<span class="tag warn">{{ _(blocked[h.id]) }}</span>{% else %}<span class="tag ok">{{ _('열림') }}</span>{% endif %}</td>
+        <td class="cell-actions">{{ m.pay_modal(h, sm, '/payments#h-' ~ h.id) }}</td>
+      </tr>
+    {% else %}<tr><td colspan="9" class="muted">{{ _('진행 중인 프로젝트가 없습니다.') }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card" id="gates">
+  <h2>{{ _('결제 관문') }} <span class="muted small">({{ _('회사 설정') }})</span></h2>
+  <p class="muted small">{{ _('켜 두면 그 결제를 "받음"으로 표시하기 전에는 다음 단계로 갈 수 없습니다. 처음에는 모두 꺼져 있습니다.') }}</p>
+  <form method="post" action="/payments/gates" class="stack">
+    {% for k, (label, kind) in C.PAYMENT_GATES.items() %}
+    <label class="switch-row"><input type="checkbox" name="{{ k }}" value="1" {% if gates[k] %}checked{% endif %} {% if user.role != 'staff' %}disabled{% endif %}> <span>{{ _(label) }}</span></label>
+    {% endfor %}
+    {% if user.role == 'staff' %}<button class="btn primary">{{ _('저장') }}</button>{% else %}<p class="muted small">{{ _('관문 설정은 관리자만 바꿀 수 있습니다.') }}</p>{% endif %}
+  </form>
+</section>
+<script src="/static/pay.js"></script>
+{% endblock %}

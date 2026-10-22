@@ -6,20 +6,24 @@ COMPANY = "Woodstone Building Services Ltd"
 # 이전 버전의 계약 상태 (변경이력 표시와 데이터 옮기기용으로만 남김)
 STATUSES = ["검토전", "검토필요", "검토중", "견적완료", "설치중", "설치완료", "보류"]
 
-# 프로젝트 9단계 (단계 이동은 회사만). 별도로 "보류" 표시가 있다.
+# 프로젝트 6단계 (진행에 따라 저절로 바뀜). 별도로 "보류" 표시가 있다.
+# 단계 안의 세부 상황(날짜 기다림, 자료 빠짐 등)은 '다음 할 일'이 알려 준다.
+# 시공은 한 단계이고, 방문으로 1차·2차·3차… 필요한 만큼 나눈다 (visits.seq).
 STAGES = {
-    1: "현장조사 예약",
-    2: "현장조사",
-    3: "견적·범위 협의",
-    4: "최종 확정",
-    5: "일정 조율",
-    6: "1차 시공",
-    7: "2차 시공",
-    8: "인수인계",
-    9: "완료 확인",
+    1: "현장조사",          # 날짜 잡기 → 현장조사 → 제출
+    2: "견적·범위 협의",    # 조사 검토, 작업 범위 v1·v2…, 견적
+    3: "시공 준비",         # 범위 확정 뒤: 필수 자료, 계약금, 시공 날짜
+    4: "시공",              # 1차·2차·…n차 시공
+    5: "인수인계",
+    6: "완료",
 }
+QUOTE_STAGE = 2         # 견적·범위 협의 (작업 범위 v1이 생기면)
+PREP_STAGE = 3          # 시공 준비 (작업 범위 확정)
+INSTALL_STAGE = 4       # 시공 (첫 시공 현장 도착·보고)
+HANDOVER_STAGE = 5      # 인수인계 ('시공 완료 확인')
+DONE_STAGE = 6          # 완료 ('인수인계 완료')
 # 이전 상태 → 단계
-STATUS_TO_STAGE = {"검토전": 1, "검토필요": 2, "검토중": 3, "견적완료": 4, "설치중": 6, "설치완료": 9, "보류": 1}
+STATUS_TO_STAGE = {"검토전": 1, "검토필요": 1, "검토중": 2, "견적완료": 3, "설치중": 4, "설치완료": 6, "보류": 1}
 
 # 내부 값 staff = 화면 표시 "관리자"(모든 권한), manager = "매니저"(현장 업무만)
 ROLES = {"staff": "관리자", "manager": "매니저", "installer": "설치업자"}
@@ -28,7 +32,7 @@ OFFICE_ROLES = ("staff", "manager")  # 집 등록·상태 변경·견적·집주
 # 역할별로 초대(초대코드 전달)·비활성화할 수 있는 역할. 매니저는 관리자를 초대하거나 건드릴 수 없다.
 MANAGEABLE = {"staff": ("staff", "manager", "installer"), "manager": ("manager", "installer")}
 
-ENTRY_TYPES = {"survey": "현장정보", "quote": "견적", "conversation": "집주인 대화"}
+ENTRY_TYPES = {"survey": "현장 메모", "quote": "견적", "conversation": "집주인 대화"}
 
 # 기록 종류별 작성/열람 권한
 ENTRY_RULES = {
@@ -42,8 +46,8 @@ PROPERTY_TYPES = ["Flat", "Maisonette", "Terraced", "End of terrace", "Semi-deta
 CONVERSATION_CHANNELS = ["전화", "문자/WhatsApp", "이메일", "방문/대면", "기타"]
 
 AUDIT_ACTIONS = {
-    "house_create": "집 등록",
-    "house_edit": "집 정보 수정",
+    "house_create": "프로젝트 등록",
+    "house_edit": "프로젝트 정보 변경",
     "status": "상태 변경",
     "stage": "단계 변경",
     "hold": "보류",
@@ -72,7 +76,9 @@ AUDIT_ACTIONS = {
     "variation_decide": "변경 요청 결정",
     "problem": "문제 보고",
     "message": "회사에 메시지",
-    "review": "승인 대기 확인",
+    "review": "확인 완료",
+    "payment": "결제 표시",
+    "payment_total": "총 계약 금액",
     "entry_create": "기록 작성",
     "entry_edit": "기록 수정",
     "attachment_add": "첨부 추가",
@@ -115,16 +121,35 @@ SURVEY_STATUS = {"draft": "작성 중", "submitted": "회사 검토 대기", "re
 
 # ---------- 자료함 (시안 p.18~19) ----------
 DOC_CATEGORIES = {"drawing": "도면", "floorplan": "평면도", "lats": "LATS 보고서", "catalogue": "제품 카탈로그·사양서", "agreement": "협의 기록"}
-# 1차 시공 일정을 확정하기 전에 꼭 있어야 하는 자료 (시공 시작 관문)
+# 시공 일정을 잡기 전에 꼭 있어야 하는 자료 (시공 시작 관문)
 REQUIRED_DOCS = {"drawing": "건물 도면", "catalogue": "제품 카탈로그·사양서", "lats": "LATS (최종)"}
 # 가격 문서는 자료함에 올리지 않는다 (제목에 이런 말이 있으면 막는다)
 PRICE_WORDS = ("quote", "quotation", "invoice", "price", "견적", "인보이스", "청구", "가격", "금액")
 
 # ---------- 방문·현장 (시안 p.4, 5, 11, 14, 15, 28) ----------
-VISIT_KINDS = {"survey": "현장조사", "first_fix": "1차 시공", "second_fix": "2차 시공", "other": "기타 방문"}
+VISIT_KINDS = {"survey": "현장조사", "install": "시공", "other": "기타 방문"}
+
+
+def visit_label(v) -> str:
+    """방문 이름: 시공은 '2차 시공'처럼 순번을 붙인다 (번역은 i18n.translate가 처리)."""
+    kind = v["kind"]
+    seq = v["seq"] if "seq" in v.keys() else None
+    if kind == "install" and seq:
+        return f"{seq}차 시공"
+    return VISIT_KINDS.get(kind, kind)
 VISIT_STATUS = {"requested": "날짜 선택 필요", "options": "날짜 후보 받음", "proposed": "가능한가요?", "confirmed": "확정",
                 "declined": "불가 답변", "done": "작업 끝", "cancelled": "취소됨"}
 WORK_DONE = {"pipework": "배관", "indoor": "실내기", "outdoor": "실외기", "electrics": "전기", "commissioning": "시운전"}
 VARIATION_KINDS = {"move_idu": "실내기 위치 이동", "add_idu": "실내기 추가", "add_pipe": "배관 추가", "other": "기타"}
+PAYMENT_KINDS = {"deposit": "계약금", "interim": "중도금", "balance": "잔금"}
+PAYMENT_STATUS = {"not_due": "청구 전", "invoiced": "청구함", "received": "받음"}
+# 결제 관문 (회사 설정): 켜면 그 결제를 받아야 다음으로 갈 수 있다
+PAYMENT_GATES = {
+    "deposit_before_install": ("계약금을 받아야 첫 시공 일정을 잡을 수 있음", "deposit"),
+    "interim_before_next_install": ("중도금을 받아야 2차 시공부터 일정을 잡을 수 있음", "interim"),
+    "balance_before_complete": ("잔금을 받아야 프로젝트를 완료할 수 있음", "balance"),
+}
+LICENCE_KINDS = {"fgas": "F-Gas 개인 자격증", "company": "업체 인증 (REFCOM 등)", "other": "기타 (보험·전기 자격 등)"}
+LICENCE_STATUS = {"pending": "승인 기다리는 중", "approved": "승인됨", "rejected": "반려"}
 VARIATION_STATUS = {"pending": "시공 금지", "approved": "시공 가능", "rejected": "원래대로 진행"}
 MESSAGE_KINDS = {"problem": "문제 보고", "message": "회사에 메시지", "scope_comment": "작업 범위 의견"}

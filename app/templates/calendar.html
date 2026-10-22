@@ -1,11 +1,12 @@
 {% extends "base.html" %}
-{% block title %}{{ _('달력') }} · {{ BRAND }}{% endblock %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ _('일정 관리') }} · {{ BRAND }}{% endblock %}
 {% block main_class %}container wide{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <p class="muted small">{{ _('전체 프로젝트 · 회사 전용') }}</p>
-    <h1>{{ _('달력') }} — {{ _('{d} 주', d=days[0]|string) }}</h1>
+    <h1>{{ _('일정 관리') }} — {{ _('{d} 주', d=days[0]|string) }}</h1>
   </div>
   <div class="row">
     <a class="btn" href="?week={{ prev_week }}">‹ {{ _('지난주') }}</a>
@@ -18,6 +19,7 @@
   <span class="clash-dot"></span>{{ _('중복') }}
 </div>
 
+<p class="muted small">{{ _('방문을 누르면 그 자리에서 날짜·시간·설치업자를 바꿀 수 있습니다. 빈 칸을 누르면 그 날·그 설치업자로 바로 예약합니다.') }}</p>
 <div class="card cal-wrap">
 <table class="cal">
   <thead><tr><th>{{ _('이름') }}</th>{% for d in days %}<th class="{% if d|string == today %}is-today{% endif %}">{{ d.day }} ({{ _(['월','화','수','목','금','토','일'][d.weekday()]) }})</th>{% endfor %}</tr></thead>
@@ -26,11 +28,11 @@
     <tr>
       <th class="who">{{ u.name }}<span class="muted small">{% if u.fgas_expiry %}F-Gas {{ u.fgas_expiry }}{% else %}{{ _('F-Gas 정보 없음') }}{% endif %}</span></th>
       {% for d in days %}
-      <td>
+      <td class="cal-cell" data-date="{{ d }}" data-installer="{{ u.id }}" data-who="{{ u.name }}">
         {% for v in cells.get((u.id, d|string), []) %}
-        <a class="cal-item kind-{{ v.kind }} st-{{ v.status }} {% if v.id in clash_ids %}clash{% endif %}" href="/houses/{{ v.house_id }}#visits">
+        <a class="cal-item kind-{{ v.kind }} st-{{ v.status }} {% if v.id in clash_ids %}clash{% endif %}" href="/houses/{{ v.house_id }}#visits" data-dialog="visit-{{ v.id }}">
           <b>{{ v.address.split(',')[0] }}</b>
-          <span>{{ _(C.VISIT_KINDS[v.kind]) }}{% if v.start_time %} · {{ v.start_time }}{% if v.end_time %}–{{ v.end_time }}{% endif %}{% endif %}</span>
+          <span>{{ _(vlabel(v)) }}{% if v.start_time %} · {{ v.start_time }}{% if v.end_time %}–{{ v.end_time }}{% endif %}{% endif %}</span>
           <span class="st">{{ _(C.VISIT_STATUS[v.status]) }}{% if v.id in clash_ids %} · {{ _('중복') }}{% endif %}</span>
         </a>
         {% endfor %}
@@ -43,73 +45,103 @@
   </tbody>
 </table>
 </div>
-<p class="muted small">{{ _('설치업자 앱 달력에는 본인 작업만 보이며, 다른 사람의 일정은 절대 보이지 않습니다.') }}</p>
+<p class="muted small">{{ _('설치업자 앱 일정에는 본인 작업만 보이며, 다른 사람의 일정은 절대 보이지 않습니다.') }}</p>
 
-<div class="cal-grid">
-<section class="card" id="book">
-  <h2>{{ _('작업 예약') }}</h2>
-  {% if warnings %}
-  <div class="warn-box">
-    {% for w in warnings %}<p class="{{ 'block' if w.level == 'block' else '' }}">⚠ {{ _(w.key, **(w.args or {})) }}</p>{% endfor %}
-    {% if not (warnings|selectattr('level', 'equalto', 'block')|list) %}
-      <p class="small">{{ _('그래도 예약하려면 사유를 적고 "그대로 예약"을 누르세요. 기록에 남습니다.') }}</p>
-    {% endif %}
+{# 방문을 누르면 표 바로 아래에 수정 칸이 펼쳐진다 (프로젝트 화면으로 가지 않음) #}
+<div id="cal-panels">
+{% for key, vs in cells.items() %}{% for v in vs %}
+<section class="card visit-panel hidden" id="visit-{{ v.id }}">
+  <div class="q-head">
+    <div><h2>{{ v.address.split(',')[0] }}</h2>
+      <p class="muted small">{{ v.ref_no }} · {{ _(vlabel(v)) }} · <span class="tag {{ 'ok' if v.status in ('confirmed', 'done') else 'bad' if v.status == 'declined' else 'warn' }}">{{ _(C.VISIT_STATUS[v.status]) }}</span>{% if v.id in clash_ids %} <span class="tag bad">{{ _('중복') }}</span>{% endif %}</p></div>
+    <button type="button" class="btn small panel-close" aria-label="{{ _('닫기') }}">✕</button>
   </div>
-  {% endif %}
-  <form method="post" action="/visits" class="stack">
+  {% if v.status in ('done', 'cancelled') %}
+    <p class="muted">{{ _('끝났거나 취소된 방문은 바꿀 수 없습니다.') }}</p>
+  {% else %}
+  <form method="post" action="/visits/{{ v.id }}/reschedule" class="stack">
+    <input type="hidden" name="back" value="/calendar?week={{ days[0] }}">
     <div class="grid-3">
-      <label>{{ _('프로젝트') }}<select name="house_id" required>
-        {% for h in houses %}<option value="{{ h.id }}" {% if (form.house_id or house_id)|string == h.id|string %}selected{% endif %}>{{ h.ref_no }} · {{ h.address }}</option>{% endfor %}
-      </select></label>
-      <label>{{ _('방문 종류') }}<select name="kind">{% for k, label in C.VISIT_KINDS.items() %}<option value="{{ k }}" {% if form.kind == k %}selected{% endif %}>{{ _(label) }}</option>{% endfor %}</select></label>
-      <label>{{ _('설치업자') }}<select name="installer_id">{% for u in installers %}<option value="{{ u.id }}" {% if form.installer_id == u.id|string %}selected{% endif %}>{{ u.name }}</option>{% endfor %}</select></label>
+      <label>{{ _('날짜') }}<input type="date" name="date" value="{{ v.date or '' }}" required></label>
+      <label>{{ _('시작') }}<input type="time" name="start_time" value="{{ v.start_time or '08:00' }}"></label>
+      <label>{{ _('끝') }}<input type="time" name="end_time" value="{{ v.end_time or '16:00' }}"></label>
     </div>
-    <div class="choices">
-      {% for k, label in (('confirmed', '확정으로 예약'), ('proposed', '설치업자에게 가능 여부 묻기'), ('requested', '설치업자가 날짜 2~3개 고르기')) %}
-      <label class="choice"><input type="radio" name="mode" value="{{ k }}" {% if (form.mode or 'confirmed') == k %}checked{% endif %}><span>{{ _(label) }}</span></label>
-      {% endfor %}
+    <div class="grid-2">
+      <label>{{ _('설치업자') }}<select name="installer_id">{% for u in installers %}<option value="{{ u.id }}" {% if u.id == v.installer_id %}selected{% endif %}>{{ u.name }}</option>{% endfor %}</select></label>
+      <label>{{ _('방식') }}<select name="mode"><option value="confirmed">{{ _('확정으로 예약') }}</option><option value="proposed" {% if v.status == 'proposed' %}selected{% endif %}>{{ _('설치업자에게 가능 여부 묻기') }}</option></select></label>
     </div>
-    <div class="grid-3 date-fields">
-      <label>{{ _('날짜') }}<input type="date" name="date" value="{{ form.date or '' }}"></label>
-      <label>{{ _('시작') }}<input type="time" name="start_time" value="{{ form.start_time or '08:00' }}"></label>
-      <label>{{ _('끝') }}<input type="time" name="end_time" value="{{ form.end_time or '16:00' }}"></label>
-    </div>
-    <label>{{ _('메모') }}<input name="note" value="{{ form.note or '' }}" maxlength="500" placeholder="{{ _('예: 측면 문으로 출입') }}"></label>
-    {% if warnings and not (warnings|selectattr('level', 'equalto', 'block')|list) %}
-      <label>{{ _('그대로 예약하는 사유') }}<input name="override_reason" required maxlength="500"></label>
-      <button class="btn danger">{{ _('그대로 예약 (기록에 남음)') }}</button>
-    {% else %}
-      <button class="btn primary">{{ _('예약') }}</button>
-    {% endif %}
+    <input name="override_reason" maxlength="500" placeholder="{{ _('경고가 떠도 진행하는 사유 (필요할 때만)') }}">
+    <button class="btn primary">{{ _('일정 저장') }}</button>
   </form>
-</section>
-
-<section class="card">
-  <h2>{{ _('날짜 확정 대기') }}</h2>
-  {% for v in waiting %}
-  <div class="wait-row">
-    <div><b>{{ v.address }}</b> <span class="muted small">{{ _(C.VISIT_KINDS[v.kind]) }} · {{ v.installer_name }} · {{ _(C.VISIT_STATUS[v.status]) }}</span></div>
-    {% if options[v.id] %}
-    <form method="post" action="/visits/{{ v.id }}/confirm" class="row wrap">
-      <select name="date">{% for d in options[v.id] %}<option>{{ d }}</option>{% endfor %}</select>
-      <input type="time" name="start_time" value="08:00"><input type="time" name="end_time" value="16:00">
-      <button class="btn small primary">{{ _('이 날로 확정') }}</button>
-    </form>
-    {% else %}<p class="muted small">{{ _('설치업자가 날짜를 고르는 중입니다.') }}</p>{% endif %}
-  </div>
-  {% else %}<p class="muted small">{{ _('없습니다.') }}</p>{% endfor %}
-  {% if fgas_soon %}
-  <h3>{{ _('F-Gas 확인 필요') }}</h3>
-  {% for u in fgas_soon %}<p class="small"><span class="tag warn">F-Gas</span> {{ _('{name} — {when} 만료·재확인', name=u.name, when=u.fgas_expiry) }}</p>{% endfor %}
   {% endif %}
+  <div class="row wrap dialog-foot">
+    <a class="btn small" href="/houses/{{ v.house_id }}">{{ _('프로젝트 열기') }}</a>
+    <a class="btn small" href="/visits/{{ v.id }}">{{ _('현장 기록') }}</a>
+    {% if v.status not in ('done', 'cancelled') %}
+    <form method="post" action="/visits/{{ v.id }}/cancel" data-confirm="{{ _('이 방문을 취소할까요?') }}" onsubmit="return confirm(this.dataset.confirm)"><button class="btn small danger">{{ _('방문 취소') }}</button></form>
+    {% endif %}
+  </div>
+</section>
+{% endfor %}{% endfor %}
+{# 빈 칸을 누르면: 프로젝트를 고르고 그 프로젝트의 예약 칸으로 (날짜·설치업자 미리 채움) #}
+<section class="card visit-panel hidden" id="new-visit">
+  <div class="q-head"><div><h2>{{ _('방문 예약하기') }}</h2><p class="muted small" id="new-visit-when"></p></div>
+    <button type="button" class="btn small panel-close" aria-label="{{ _('닫기') }}">✕</button></div>
+  <form method="post" action="/visits" class="stack">
+    <input type="hidden" name="date"><input type="hidden" name="installer_id"><input type="hidden" name="from" value="calendar">
+    <label>{{ _('프로젝트') }}<select name="house_id" required>
+      {% for h in houses %}<option value="{{ h.id }}">{{ h.ref_no }} · {{ h.address }}</option>{% endfor %}
+    </select></label>
+    <div class="grid-3">
+      <label>{{ _('방문 종류') }}<select name="kind">{% for k, label in C.VISIT_KINDS.items() %}<option value="{{ k }}">{{ _(label) }}</option>{% endfor %}</select></label>
+      <label>{{ _('시작') }}<input type="time" name="start_time" value="08:00"></label>
+      <label>{{ _('끝') }}<input type="time" name="end_time" value="16:00"></label>
+    </div>
+    <label>{{ _('방식') }}<select name="mode"><option value="confirmed">{{ _('확정으로 예약') }}</option><option value="proposed">{{ _('설치업자에게 가능 여부 묻기') }}</option></select></label>
+    <label>{{ _('메모') }}<input name="note" maxlength="500" placeholder="{{ _('예: 측면 문으로 출입') }}"></label>
+    <button class="btn primary">{{ _('예약') }}</button>
+  </form>
 </section>
 </div>
 <script>
-  // '날짜 고르기 요청'은 날짜·시간이 필요 없다
-  (function () {
-    const f = document.querySelector('#book form'), box = f.querySelector('.date-fields');
-    const sync = () => box.classList.toggle('hidden', f.querySelector('input[name=mode]:checked').value === 'requested');
-    f.addEventListener('change', sync); sync();
-  })();
+  // 일정 누르기 → 표 아래 수정 칸, 빈 칸 누르기 → 표 아래 예약 칸
+  const panels = [...document.querySelectorAll('.visit-panel')];
+  const open = (panel, chip) => {
+    panels.forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.cal-item.selected, .cal-cell.selected').forEach(x => x.classList.remove('selected'));
+    panel.classList.remove('hidden');
+    if (chip) chip.classList.add('selected');
+    panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+  };
+  const nv = document.getElementById('new-visit');
+  document.querySelectorAll('.cal-cell').forEach(td => td.addEventListener('click', e => {
+    if (e.target.closest('.cal-item')) return;
+    nv.querySelector('[name=date]').value = td.dataset.date;
+    nv.querySelector('[name=installer_id]').value = td.dataset.installer;
+    nv.querySelector('#new-visit-when').textContent = td.dataset.date + ' · ' + td.dataset.who;
+    open(nv, td);
+  }));
+  document.querySelectorAll('.cal-item[data-dialog]').forEach(a => a.addEventListener('click', e => {
+    const p = document.getElementById(a.dataset.dialog);
+    if (p) { e.preventDefault(); open(p, a); }
+  }));
+  document.querySelectorAll('.panel-close').forEach(b => b.addEventListener('click', () => {
+    b.closest('.visit-panel').classList.add('hidden');
+    document.querySelectorAll('.cal-item.selected, .cal-cell.selected').forEach(x => x.classList.remove('selected'));
+  }));
 </script>
+
+<div class="cal-grid">
+{% if fgas_soon %}
+<section class="card" id="fgas">
+  <h2>{{ _('F-Gas 확인 필요') }}</h2>
+  {% for u in fgas_soon %}<p class="small"><span class="tag warn">F-Gas</span> {{ _('{name} — {when} 만료·재확인', name=u.name, when=u.fgas_expiry) }}</p>{% endfor %}
+</section>
+{% endif %}
+
+
+
+
+</div>
+
 {% endblock %}

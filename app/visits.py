@@ -7,7 +7,7 @@
 설치업자에게는 본인 일정만 보인다.
 """
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request
 from starlette.exceptions import HTTPException
@@ -15,7 +15,7 @@ from starlette.exceptions import HTTPException
 from . import constants as C
 from .auth import Forbidden, current_user, office_user
 from .db import audit, get_db, now
-from .main import LONDON, UserError, flash, form_str, get_house_or_404, is_office, redirect, remove_files, render
+from .main import LONDON, UserError, advance_stage, flash, form_str, get_house_or_404, is_office, redirect, remove_files, render, safe_next
 from .survey import add_media, gather_uploads, media_for
 
 router = APIRouter()
@@ -66,10 +66,21 @@ def overlaps(a_start, a_end, b_start, b_end) -> bool:
 def booking_warnings(conn, installer, d: date, start, end, kind, house_id, ignore_visit=None) -> list[dict]:
     """예약할 때 띄우는 경고. 'block'은 막고, 나머지는 사유를 적으면 그대로 예약할 수 있다(기록에 남음)."""
     out = []
-    if kind == "first_fix":
+    house = conn.execute("SELECT on_hold FROM houses WHERE id = ?", (house_id,)).fetchone()
+    if house and house["on_hold"]:
+        out.append({"level": "warn", "key": "보류 중인 프로젝트입니다."})
+    if kind == "install":
+        if not conn.execute("SELECT 1 FROM scope_versions WHERE house_id = ? AND locked_at IS NOT NULL", (house_id,)).fetchone():
+            out.append({"level": "warn", "key": "작업 범위가 아직 확정되지 않았습니다."})
+        # 결제 관문 (회사 설정): 첫 시공은 계약금, 2차 시공부터는 중도금
+        from .payments import gate_block
+        first = not install_count(conn, house_id, exclude=ignore_visit)
+        msg = gate_block(conn, house_id, "deposit_before_install" if first else "interim_before_next_install")
+        if msg:
+            out.append({"level": "block", "key": msg})
         from .documents import install_pack_ready
         if not install_pack_ready(conn, house_id):
-            out.append({"level": "block", "key": "설치 전 필수 자료(건물 도면, 제품 카탈로그·사양서, 최종 LATS)가 빠져 1차 시공을 예약할 수 없습니다."})
+            out.append({"level": "block", "key": "설치 전 필수 자료(건물 도면, 제품 카탈로그·사양서, 최종 LATS)가 빠져 시공을 예약할 수 없습니다."})
     if installer and d:
         rows = conn.execute(
             f"""SELECT v.id, v.start_time, v.end_time, h.address FROM visits v JOIN houses h ON h.id = v.house_id
@@ -80,14 +91,31 @@ def booking_warnings(conn, installer, d: date, start, end, kind, house_id, ignor
                 out.append({"level": "warn", "key": "{name}님은 이미 이 시간에 예약되어 있습니다: {address} {time}",
                             "args": {"name": installer["name"], "address": r["address"],
                                      "time": f"{r['start_time'] or ''}–{r['end_time'] or ''}".strip("–")}})
-        if kind in ("first_fix", "second_fix") and installer["fgas_expiry"] and installer["fgas_expiry"] < d.isoformat():
-            out.append({"level": "warn", "key": "{name}님의 F-Gas 자격이 {when}에 만료됩니다. 냉매 작업 배정 전 확인하세요.",
-                        "args": {"name": installer["name"], "when": installer["fgas_expiry"]}})
         declined = conn.execute("SELECT 1 FROM visits WHERE installer_id = ? AND date = ? AND status = 'declined'",
                                 (installer["id"], d.isoformat())).fetchone()
         if declined:
             out.append({"level": "warn", "key": "{name}님이 이 날짜에 '불가'로 답한 적이 있습니다.", "args": {"name": installer["name"]}})
+    if installer and kind == "install":     # 냉매 작업: 회사가 승인한 F-Gas가 방문일까지 유효해야 한다
+        if not installer["fgas_approved_at"] or not installer["fgas_expiry"]:
+            out.append({"level": "block", "key": "{name}님의 F-Gas 자격증이 아직 승인되지 않아 시공에 배정할 수 없습니다. 사용자 관리에서 자격증을 확인하세요.",
+                        "args": {"name": installer["name"]}})
+        elif installer["fgas_expiry"] < (d or today()).isoformat():
+            out.append({"level": "block", "key": "{name}님의 F-Gas 자격이 {when}에 만료되어 이 날짜에 냉매 작업을 배정할 수 없습니다.",
+                        "args": {"name": installer["name"], "when": installer["fgas_expiry"]}})
     return out
+
+
+def install_count(conn, house_id: int, exclude=None) -> int:
+    """이 프로젝트에 잡힌 시공 방문 수 (취소·불가 제외)."""
+    return conn.execute("""SELECT COUNT(*) AS n FROM visits WHERE house_id = ? AND kind = 'install'
+                           AND status NOT IN ('cancelled', 'declined') AND id != ?""", (house_id, exclude or 0)).fetchone()["n"]
+
+
+def next_seq(conn, house_id: int) -> int:
+    """새 시공 방문의 순번 (1차, 2차, …)."""
+    row = conn.execute("""SELECT MAX(seq) AS n FROM visits WHERE house_id = ? AND kind = 'install'
+                          AND status NOT IN ('cancelled', 'declined')""", (house_id,)).fetchone()
+    return (row["n"] or 0) + 1
 
 
 def rooms_for_tags(conn, house_id: int, lang) -> list[str]:
@@ -133,16 +161,9 @@ def calendar_ctx(conn, week: str, house: int) -> dict:
             for b in booked[i + 1:]:
                 if overlaps(a["start_time"], a["end_time"], b["start_time"], b["end_time"]):
                     clash_ids |= {a["id"], b["id"]}
-    waiting = conn.execute(
-        """SELECT v.*, h.address, u.name AS installer_name FROM visits v JOIN houses h ON h.id = v.house_id
-           LEFT JOIN users u ON u.id = v.installer_id WHERE v.status IN ('requested', 'options') ORDER BY v.created_at""").fetchall()
-    options = {}
-    for v in waiting:
-        options[v["id"]] = [r["date"] for r in conn.execute(
-            "SELECT date FROM visit_date_options WHERE visit_id = ? ORDER BY date", (v["id"],))]
     houses = conn.execute("SELECT id, address, ref_no FROM houses ORDER BY address").fetchall()
     fgas_soon = [u for u in installers if u["fgas_expiry"] and u["fgas_expiry"] <= (today() + timedelta(days=30)).isoformat()]
-    return dict(days=days, installers=installers, cells=cells, clash_ids=clash_ids, waiting=waiting, options=options,
+    return dict(days=days, installers=installers, cells=cells, clash_ids=clash_ids,
                 houses=houses, house_id=house, fgas_soon=fgas_soon, C=C, prev_week=(start - timedelta(days=7)).isoformat(),
                 next_week=(start + timedelta(days=7)).isoformat(), today=today().isoformat())
 
@@ -161,7 +182,8 @@ async def visit_create(request: Request, user=Depends(office_user), conn=Depends
     start, end = parse_time(form_str(form, "start_time", 5)), parse_time(form_str(form, "end_time", 5))
     note = form_str(form, "note", 500)
     override = form_str(form, "override_reason", 500)
-    back = f"/calendar?week={(d or today()).isoformat()}&house={house_id}"
+    from_project = form_str(form, "from", 20) == "project"      # 프로젝트 화면에서 예약
+    back = f"/houses/{house_id}#book" if from_project else f"/calendar?week={(d or today()).isoformat()}&house={house_id}"
     if kind not in C.VISIT_KINDS or mode not in ("confirmed", "proposed", "requested") or not installer:
         flash(request, "방문 종류, 설치업자, 예약 방식을 고르세요.", "error")
         return redirect(back)
@@ -174,28 +196,28 @@ async def visit_create(request: Request, user=Depends(office_user), conn=Depends
     warnings = booking_warnings(conn, installer, d if mode != "requested" else None, start, end, kind, house_id)
     if any(w["level"] == "block" for w in warnings) or (warnings and not override):
         # 경고를 보여주고 다시 묻는다 (막는 경고가 아니면 사유를 적고 '그대로 예약' 가능 — 기록에 남음)
-        return render(request, "calendar.html", user=user, **calendar_ctx(conn, (d or today()).isoformat(), house_id),
-                      form={k: form_str(form, k, 500) for k in form.keys()}, warnings=warnings, status_code=409)
+        return render(request, "visit_book.html", user=user, house=house, C=C, warnings=warnings, status_code=409,
+                      form={k: form_str(form, k, 500) for k in form.keys()},
+                      installers=conn.execute("SELECT * FROM users WHERE role = 'installer' AND active = 1 ORDER BY name").fetchall())
     ts = now()
     with conn:
         vid = conn.insert(
-            """INSERT INTO visits (house_id, kind, installer_id, date, start_time, end_time, status, note, override_reason,
-                                   created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (house_id, kind, installer["id"], d.isoformat() if d and mode != "requested" else None, start, end, mode, note,
-             override or None, user["id"], ts, ts))
+            """INSERT INTO visits (house_id, kind, seq, installer_id, date, start_time, end_time, status, note, override_reason,
+                                   created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (house_id, kind, next_seq(conn, house_id) if kind == "install" else None, installer["id"],
+             d.isoformat() if d and mode != "requested" else None, start, end, mode, note, override or None, user["id"], ts, ts))
         if not conn.execute("SELECT 1 FROM house_members WHERE house_id = ? AND user_id = ?", (house_id, installer["id"])).fetchone():
             conn.execute("INSERT INTO house_members (house_id, user_id, added_by, added_at) VALUES (?, ?, ?, ?)",
                          (house_id, installer["id"], user["id"], ts))
             audit(conn, house_id=house_id, actor_id=user["id"], action="member_add", detail=installer["name"])
         audit(conn, house_id=house_id, actor_id=user["id"], action="visit_create",
-              detail=json.dumps({"kind": kind, "date": d.isoformat() if d else None, "mode": mode, "installer": installer["name"],
+              detail=json.dumps({"kind": kind, "date": d.isoformat() if d else None, "mode": mode, "installer": installer["name"], "installer_id": installer["id"], "seq": next_seq(conn, house_id) - 1 if kind == "install" else None,
                                  "override": override or None}, ensure_ascii=False))
-        if house["stage"] < 2 and kind == "survey":
-            conn.execute("UPDATE houses SET stage = 2, updated_at = ? WHERE id = ?", (ts, house_id))
-            audit(conn, house_id=house_id, actor_id=user["id"], action="stage", detail=f"{house['stage']} → 2")
     flash(request, {"requested": "{name}님에게 가능한 날짜 2~3개를 골라 달라고 요청했습니다.",
                     "proposed": "{name}님에게 가능 여부를 물었습니다.",
                     "confirmed": "방문을 예약했습니다."}[mode], name=installer["name"])
+    if from_project:
+        return redirect(f"/houses/{house_id}#visits")
     return redirect(f"/calendar?week={(d or today()).isoformat()}")
 
 
@@ -206,15 +228,26 @@ async def visit_confirm_option(request: Request, visit_id: int, user=Depends(off
     form = await request.form()
     d = parse_date(form_str(form, "date", 10))
     if v["status"] not in ("options", "requested") or not d:
-        raise HTTPException(400, "확정할 날짜를 고르세요.")
+        flash(request, "확정할 날짜를 고르세요.", "error")
+        return redirect(f"/houses/{v['house_id']}#visits")
     start, end = parse_time(form_str(form, "start_time", 5)), parse_time(form_str(form, "end_time", 5))
+    override = form_str(form, "override_reason", 500)
+    installer = conn.execute("SELECT * FROM users WHERE id = ?", (v["installer_id"] or 0,)).fetchone()
+    warnings = booking_warnings(conn, installer, d, start, end, v["kind"], v["house_id"], ignore_visit=visit_id)
+    if any(w["level"] == "block" for w in warnings) or (warnings and not override):
+        for w in warnings:
+            flash(request, w["key"], "error", **w.get("args", {}))
+        if not any(w["level"] == "block" for w in warnings):
+            flash(request, "그래도 확정하려면 사유를 적고 다시 확정하세요. 기록에 남습니다.", "error")
+        return redirect(f"/houses/{v['house_id']}#confirm-{visit_id}")
     with conn:
-        conn.execute("UPDATE visits SET date = ?, start_time = ?, end_time = ?, status = 'confirmed', updated_at = ? WHERE id = ?",
-                     (d.isoformat(), start, end, now(), visit_id))
+        conn.execute("""UPDATE visits SET date = ?, start_time = ?, end_time = ?, status = 'confirmed',
+                        override_reason = COALESCE(?, override_reason), updated_at = ? WHERE id = ?""",
+                     (d.isoformat(), start, end, override or None, now(), visit_id))
         audit(conn, house_id=v["house_id"], actor_id=user["id"], action="visit_update",
-              detail=json.dumps({"date": d.isoformat(), "status": "confirmed"}))
+              detail=json.dumps({"date": d.isoformat(), "status": "confirmed", "override": override or None}, ensure_ascii=False))
     flash(request, "{date}로 확정했습니다.", date=d.isoformat())
-    return redirect(f"/calendar?week={d.isoformat()}")
+    return redirect(f"/houses/{v['house_id']}#visits")
 
 
 @router.post("/visits/{visit_id}/reschedule")
@@ -222,7 +255,7 @@ async def visit_reschedule(request: Request, visit_id: int, user=Depends(office_
     """날짜·시간·설치업자 바꾸기. 예약할 때와 같은 경고를 확인한다(막는 경고는 넘길 수 없음, 나머지는 사유를 적으면 진행)."""
     v = visit_or_404(conn, visit_id, user)
     form = await request.form()
-    back = f"/houses/{v['house_id']}#visits"
+    back = safe_next(form_str(form, "back", 200)) if form_str(form, "back", 200) else f"/houses/{v['house_id']}#visits"
     if v["status"] in ("done", "cancelled"):
         flash(request, "끝났거나 취소된 방문은 바꿀 수 없습니다.", "error")
         return redirect(back)
@@ -257,7 +290,7 @@ async def visit_reschedule(request: Request, visit_id: int, user=Depends(office_
                          (v["house_id"], installer["id"], user["id"], ts))
             audit(conn, house_id=v["house_id"], actor_id=user["id"], action="member_add", detail=installer["name"])
         audit(conn, house_id=v["house_id"], actor_id=user["id"], action="visit_update",
-              detail=json.dumps({"from": v["date"], "date": d.isoformat(), "installer": installer["name"], "status": status,
+              detail=json.dumps({"from": v["date"], "date": d.isoformat(), "installer": installer["name"], "installer_id": installer["id"], "status": status,
                                  "override": override or None}, ensure_ascii=False))
     flash(request, "일정을 바꿨습니다." if status == "confirmed" else "일정을 바꾸고 {name}님에게 가능 여부를 물었습니다.", name=installer["name"])
     return redirect(back)
@@ -273,21 +306,25 @@ def visit_cancel(request: Request, visit_id: int, user=Depends(office_user), con
     return redirect(f"/calendar?week={v['date'] or today().isoformat()}")
 
 
-# ---------- 설치업자: 오늘 할 일 (p.4) ----------
+# ---------- 설치업자: 오늘 할 일 (p.4) — '프로젝트' 화면 위쪽에 보여준다 ----------
 
 @router.get("/today")
-def today_page(request: Request, user=Depends(current_user), conn=Depends(get_db)):
-    if is_office(user):
-        return redirect("/approvals")
+def today_page(request: Request, user=Depends(current_user)):
+    """예전 주소. 메뉴를 줄이면서 '오늘 할 일'은 '프로젝트' 화면 위쪽으로 합쳤다."""
+    return redirect("/approvals" if is_office(user) else "/houses")
+
+
+def today_context(conn, user) -> dict:
     t = today().isoformat()
     mine = conn.execute(
-        """SELECT v.*, h.address, h.postcode,
+        """SELECT v.*, h.address, h.postcode, h.on_hold,
                   (SELECT at FROM checkins c WHERE c.visit_id = v.id AND c.kind = 'arrive' ORDER BY id DESC LIMIT 1) AS arrived_at
            FROM visits v JOIN houses h ON h.id = v.house_id
            WHERE v.installer_id = ? AND v.status NOT IN ('cancelled') ORDER BY v.date, v.start_time""", (user["id"],)).fetchall()
     todays = [v for v in mine if v["date"] == t and v["status"] in ("confirmed", "done")]
     upcoming = [v for v in mine if v["date"] and v["date"] > t and v["status"] in ("confirmed", "proposed")][:8]
     proposals = [v for v in mine if v["status"] == "proposed"]
+    missed = [v for v in mine if v["status"] == "confirmed" and v["kind"] != "survey" and v["date"] and v["date"] < t]
     date_requests = [v for v in mine if v["status"] == "requested"]
     surveys = conn.execute(
         """SELECT s.id, s.house_id, h.address, h.postcode,
@@ -302,12 +339,20 @@ def today_page(request: Request, user=Depends(current_user), conn=Depends(get_db
     from .scope import unacked_scopes
     scopes = unacked_scopes(conn, user)
     docs = unacked_docs(conn, user)
+    doc_houses: dict = {}
+    for d in docs:                                   # 프로젝트마다 한 장씩
+        doc_houses.setdefault(d["house_id"], {"address": d["address"], "n": 0})["n"] += 1
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds")
+    decisions = conn.execute(
+        """SELECT x.*, h.address FROM variations x JOIN houses h ON h.id = x.house_id
+           WHERE x.created_by = ? AND x.status != 'pending' AND x.decided_at >= ? ORDER BY x.decided_at DESC""",
+        (user["id"], since)).fetchall()
     rooms = {}
     for v in todays:
         row = conn.execute("SELECT data FROM scope_versions WHERE house_id = ? ORDER BY version DESC LIMIT 1", (v["house_id"],)).fetchone()
         rooms[v["id"]] = len(json.loads(row["data"]).get("rooms", [])) if row else 0
-    return render(request, "today.html", user=user, todays=todays, upcoming=upcoming, proposals=proposals,
-                  date_requests=date_requests, surveys=surveys, scopes=scopes, docs=docs, rooms=rooms, C=C, today=today())
+    return dict(todays=todays, upcoming=upcoming, proposals=proposals, date_requests=date_requests, surveys=surveys,
+                scopes=scopes, docs=docs, doc_houses=doc_houses, rooms=rooms, missed=missed, decisions=decisions, C=C, today=today())
 
 
 # ---------- 설치업자: 날짜 고르기 (p.5) / 가능 여부 답 ----------
@@ -338,7 +383,7 @@ async def dates_send(request: Request, visit_id: int, user=Depends(current_user)
         raise Forbidden()
     picked = sorted({d for d in (await request.form()).getlist("date") if (pd := parse_date(d)) and pd >= today()})
     if not 1 <= len(picked) <= 3:
-        flash(request, "가능한 날짜를 2~3개 고르세요.", "error")
+        flash(request, "가능한 날짜를 1~3개 고르세요.", "error")
         return redirect(f"/visits/{visit_id}/dates")
     ts = now()
     with conn:
@@ -349,7 +394,7 @@ async def dates_send(request: Request, visit_id: int, user=Depends(current_user)
         conn.execute("UPDATE visits SET status = 'options', updated_at = ? WHERE id = ?", (ts, visit_id))
         audit(conn, house_id=v["house_id"], actor_id=user["id"], action="visit_dates", detail=", ".join(picked))
     flash(request, "날짜 {n}개를 회사에 보냈습니다. 회사가 고객과 통화해 하루를 확정합니다.", n=len(picked))
-    return redirect("/today")
+    return redirect("/houses")
 
 
 @router.post("/visits/{visit_id}/reply")
@@ -358,13 +403,15 @@ async def visit_reply(request: Request, visit_id: int, user=Depends(current_user
     v = visit_or_404(conn, visit_id, user)
     if v["installer_id"] != user["id"] or v["status"] != "proposed":
         raise Forbidden()
-    yes = form_str(await request.form(), "answer", 5) == "yes"
+    form = await request.form()
+    yes = form_str(form, "answer", 5) == "yes"
     with conn:
         conn.execute("UPDATE visits SET status = ?, updated_at = ? WHERE id = ?", ("confirmed" if yes else "declined", now(), visit_id))
         audit(conn, house_id=v["house_id"], actor_id=user["id"], action="visit_reply",
               detail=json.dumps({"date": v["date"], "answer": "yes" if yes else "no"}))
     flash(request, "가능하다고 답했습니다. 일정이 확정됐습니다." if yes else "불가로 답했습니다. 회사가 다른 날짜나 다른 설치업자를 정합니다.")
-    return redirect("/today")
+    back = form_str(form, "back", 200)
+    return redirect(safe_next(back) if back else "/houses")
 
 
 # ---------- 현장 도착 후 (p.11) ----------
@@ -376,7 +423,12 @@ def site_context(conn, v, user, lang):
     from .documents import latest_docs
     docs = latest_docs(conn, v["house_id"], user)
     variations = conn.execute("SELECT * FROM variations WHERE house_id = ? ORDER BY number DESC", (v["house_id"],)).fetchall()
-    return dict(visit=v, checkins=checkins, arrived=next((c for c in checkins if c["kind"] == "arrive"), None),
+    reports = conn.execute("""SELECT d.*, u.name AS author_name, r.name AS reviewer_name FROM day_reports d JOIN users u ON u.id = d.user_id
+                              LEFT JOIN users r ON r.id = d.reviewed_by WHERE d.visit_id = ? ORDER BY d.id""", (v["id"],)).fetchall()
+    from .attendance import visit_attendance, STATUS_LABELS, LATE_MIN
+    return dict(reports=reports, report_media=media_for(conn, "report", [r["id"] for r in reports]),
+                att=visit_attendance(conn, v) if is_office(user) else None, ATT_LABELS=STATUS_LABELS, LATE_MIN=LATE_MIN,
+                work_labels=C.WORK_DONE, is_today=v["date"] == today().isoformat(), today_iso=today().isoformat(), visit=v, checkins=checkins, arrived=next((c for c in checkins if c["kind"] == "arrive"), None),
                 finished=next((c for c in checkins if c["kind"] == "finish"), None), photos=photos,
                 tags=rooms_for_tags(conn, v["house_id"], lang), new_docs=sum(1 for d in docs if not d["my_ack"]),
                 variations=variations, C=C)
@@ -397,7 +449,7 @@ def _checkin(conn, v, user, kind, form) -> None:
             return None
     conn.execute("INSERT INTO checkins (visit_id, user_id, kind, at, lat, lng, accuracy) VALUES (?, ?, ?, ?, ?, ?, ?)",
                  (v["id"], user["id"], kind, now(), num("lat"), num("lng"), num("accuracy")))
-    audit(conn, house_id=v["house_id"], actor_id=user["id"], action=kind)
+    audit(conn, house_id=v["house_id"], actor_id=user["id"], action=kind, detail=v["kind"])
 
 
 @router.post("/visits/{visit_id}/arrive")
@@ -405,15 +457,15 @@ async def site_arrive(request: Request, visit_id: int, user=Depends(current_user
     v = visit_or_404(conn, visit_id, user)
     if v["installer_id"] != user["id"]:
         raise Forbidden()
+    if v["status"] != "confirmed" or v["date"] != today().isoformat():
+        flash(request, "현장 도착은 확정된 방문 당일에만 누를 수 있습니다.", "error")
+        return redirect(f"/visits/{visit_id}")
     if not conn.execute("SELECT 1 FROM checkins WHERE visit_id = ? AND kind = 'arrive'", (visit_id,)).fetchone():
         form = await request.form()
         with conn:
             _checkin(conn, v, user, "arrive", form)
-            if v["kind"] in ("first_fix", "second_fix"):          # 시공 시작 → 프로젝트 단계도 맞춘다
-                target = 6 if v["kind"] == "first_fix" else 7
-                if v["stage"] < target:
-                    conn.execute("UPDATE houses SET stage = ? WHERE id = ?", (target, v["house_id"]))
-                    audit(conn, house_id=v["house_id"], actor_id=user["id"], action="stage", detail=f"{v['stage']} → {target}")
+            if v["kind"] == "install":          # 시공 시작 → 프로젝트 단계도 맞춘다
+                advance_stage(conn, v["house_id"], C.INSTALL_STAGE, user["id"])
     if v["kind"] == "survey":
         return redirect(f"/houses/{v['house_id']}/survey")
     return redirect(f"/visits/{visit_id}")
@@ -453,6 +505,9 @@ async def site_photos(request: Request, visit_id: int, user=Depends(current_user
 def finish_page(request: Request, visit_id: int, user=Depends(current_user), conn=Depends(get_db)):
     from .i18n import detect_lang
     v = visit_or_404(conn, visit_id, user)
+    if v["status"] == "done":
+        flash(request, "이 방문은 이미 작업 끝 보고를 보냈습니다.")
+        return redirect(f"/visits/{visit_id}")
     return render(request, "visit_finish.html", user=user, **site_context(conn, v, user, detect_lang(request)))
 
 
@@ -462,6 +517,9 @@ async def finish_send(request: Request, visit_id: int, user=Depends(current_user
     v = visit_or_404(conn, visit_id, user)
     if v["installer_id"] != user["id"]:
         raise Forbidden()
+    if v["status"] == "done":
+        flash(request, "이 방문은 이미 작업 끝 보고를 보냈습니다.")
+        return redirect(f"/visits/{visit_id}")
     form = await request.form()
     work = [w for w in form.getlist("work") if w in C.WORK_DONE]
     problem = form_str(form, "problem", 5) == "yes"
@@ -472,7 +530,7 @@ async def finish_send(request: Request, visit_id: int, user=Depends(current_user
         flash(request, e.key, "error", **e.args_)
         return redirect(f"/visits/{visit_id}/finish")
     error = None
-    if not work:
+    if not work and v["kind"] == "install":
         error = "오늘 한 작업을 하나 이상 고르세요."
     elif problem and (not note or not saved):
         error = "문제가 있으면 사진과 메모가 꼭 필요합니다."
@@ -488,12 +546,14 @@ async def finish_send(request: Request, visit_id: int, user=Depends(current_user
                               (visit_id, v["house_id"], user["id"], json.dumps(work), 1 if problem else 0, note, now()))
             add_media(conn, saved, v["house_id"], "report", rid, user["id"])
             _checkin(conn, v, user, "finish", form)
+            if v["kind"] == "install":          # 도착을 안 누르고 보고만 보낸 경우에도 단계를 맞춘다
+                advance_stage(conn, v["house_id"], C.INSTALL_STAGE, user["id"])
             conn.execute("UPDATE visits SET status = 'done', updated_at = ? WHERE id = ?", (now(), visit_id))
     except Exception:
         remove_files(saved)
         raise
-    flash(request, "오늘 작업 보고를 보냈습니다. 회사가 확인한 뒤 고객에게 전달됩니다.")
-    return redirect("/today")
+    flash(request, "작업 끝 보고를 보냈습니다. 회사가 확인한 뒤 고객에게 전달됩니다.")
+    return redirect("/houses")
 
 
 # ---------- 문제 / 회사에 메시지 ----------
@@ -521,7 +581,7 @@ async def message_send(request: Request, house_id: int, user=Depends(current_use
             mid = conn.insert("""INSERT INTO messages (house_id, kind, visit_id, user_id, body, created_at) VALUES (?, ?, ?, ?, ?, ?)""",
                               (house_id, kind, int(vid) if vid.isdigit() else None, user["id"], body, now()))
             add_media(conn, saved, house_id, "message", mid, user["id"])
-            audit(conn, house_id=house_id, actor_id=user["id"], action=kind)
+            audit(conn, house_id=house_id, actor_id=user["id"], action=kind, detail=body[:60])
     except Exception:
         remove_files(saved)
         raise
@@ -561,12 +621,15 @@ async def variation_create(request: Request, house_id: int, user=Depends(current
             xid = conn.insert("""INSERT INTO variations (house_id, number, visit_id, kind, body, status, created_by, created_at)
                                  VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)""",
                               (house_id, n, int(vid) if vid.isdigit() else None, kind, body, user["id"], now()))
+            if is_office(user):    # 회사가 직접 남긴 요청은 '확인할 일'에 올리지 않는다 (고객 승인 결과만 표시하면 됨)
+                conn.execute("UPDATE variations SET reviewed_by = ?, reviewed_at = ? WHERE id = ?", (user["id"], now(), xid))
             add_media(conn, saved, house_id, "variation", xid, user["id"])
             audit(conn, house_id=house_id, actor_id=user["id"], action="variation_create", detail=f"VO-{n}")
     except Exception:
         remove_files(saved)
         raise
-    flash(request, "VO-{n} 변경 요청을 회사로 보냈습니다. 고객 승인 전에는 이 부분을 시공하지 마세요.", n=n)
+    flash(request, "VO-{n} 변경 요청을 기록했습니다. 고객 승인 결과를 표시하세요." if is_office(user) else
+          "VO-{n} 변경 요청을 회사로 보냈습니다. 고객 승인 전에는 이 부분을 시공하지 마세요.", n=n)
     return redirect(f"/houses/{house_id}/variations")
 
 
@@ -585,6 +648,7 @@ async def variation_decide(request: Request, var_id: int, user=Depends(office_us
         conn.execute("""UPDATE variations SET status = ?, decided_by = ?, decided_at = ?, decision_note = ?,
                         reviewed_by = COALESCE(reviewed_by, ?), reviewed_at = COALESCE(reviewed_at, ?) WHERE id = ?""",
                      (status, user["id"], now(), form_str(form, "note", 500) or None, user["id"], now(), var_id))
-        audit(conn, house_id=x["house_id"], actor_id=user["id"], action="variation_decide", detail=f"VO-{x['number']}: {status}")
+        audit(conn, house_id=x["house_id"], actor_id=user["id"], action="variation_decide", detail=f"VO-{x['number']}:{status}")
     flash(request, "VO-{n}: {status}", n=x["number"], status=C.VARIATION_STATUS[status])
-    return redirect(form_str(form, "back", 200) or f"/houses/{x['house_id']}/variations")
+    back = form_str(form, "back", 200)
+    return redirect(safe_next(back) if back else f"/houses/{x['house_id']}/variations")

@@ -34,7 +34,7 @@ if __name__ == "__main__":
     assert all(r == "ok" for r in results), results
     c = D.connect()
     rows = [(r["status"], r["stage"], r["on_hold"], r["ref_no"]) for r in c.execute("SELECT * FROM houses ORDER BY id")]
-    assert rows == [("검토중", 3, 0, "WS-100001"), ("설치완료", 9, 0, "WS-100002"), ("보류", 1, 1, "WS-100003")], rows
+    assert rows == [("검토중", 2, 0, "WS-100001"), ("설치완료", 6, 0, "WS-100002"), ("보류", 1, 1, "WS-100003")], rows
     assert c.execute("SELECT COUNT(*) AS n FROM house_members").fetchone()["n"] == 3
     assert c.execute("SELECT COUNT(*) AS n FROM settings WHERE key LIKE ?", ("invite_code_%",)).fetchone()["n"] == 3
     print("CONCURRENT INIT OK (8 at once)")

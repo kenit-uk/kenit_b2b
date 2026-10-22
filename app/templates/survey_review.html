@@ -3,6 +3,7 @@
 {% import "_scope_values.html" as v with context %}
 {% block title %}{{ _('현장조사') }} — {{ house.address }}{% endblock %}
 {% block content %}
+{% set locked = (scopes|selectattr("locked_at")|list|last) if scopes else None %}
 <a class="back" href="/houses/{{ house.id }}">← {{ house.ref_no }} · {{ house.address }}</a>
 <div class="page-head review-head">
   <div>
@@ -20,12 +21,41 @@
     {% else %}
     <form method="post" action="/houses/{{ house.id }}/survey/reviewed"><button class="btn">{{ _('검토만 완료') }}</button></form>
     {% endif %}
+    {% if not locked and not empty %}
     <form method="post" action="/houses/{{ house.id }}/scope/from-survey"
           {% if scopes %}data-confirm="{{ _('이미 작업 범위가 있습니다. 이 조사로 새 버전을 만들까요?') }}" onsubmit="return confirm(this.dataset.confirm)"{% endif %}>
-      <button class="btn primary">{{ _('이 조사로 작업 범위 v{n} 만들기', n=(scopes|length) + 1) }}</button>
+      <button class="btn {{ 'primary' if not scopes else '' }}">{{ _('이 조사로 작업 범위 v{n} 만들기', n=(scopes|length) + 1) }}</button>
     </form>
+    {% endif %}
   </div>
 </div>
+
+{# 지금 상태에서 다음에 할 일 하나 #}
+<section class="card next-step">
+  <span class="sec-label">{{ _('다음 할 일') }}</span>
+  {% if empty %}
+    <p><b>{{ _('조사 내용이 비어 있습니다.') }}</b> {{ _('방 형태·용량도, 사진도 없습니다.') }}</p>
+    <div class="row wrap">
+      {% if survey.status == 'reviewed' %}<form method="post" action="/houses/{{ house.id }}/survey/reopen"><button class="btn primary">{{ _('설치업자가 다시 고치게 열기') }}</button></form>{% endif %}
+      <a class="btn {{ '' if survey.status == 'reviewed' else 'primary' }}" href="/houses/{{ house.id }}/survey?edit=1">{{ _('조사 내용 직접 고치기') }}</a>
+    </div>
+  {% elif survey.status == 'draft' %}
+    <p><b>{{ _('설치업자가 아직 제출하지 않았습니다.') }}</b> {{ _('제출되면 확인할 일에 올라옵니다. 급하면 직접 고칠 수 있습니다.') }}</p>
+  {% elif not scopes %}
+    <p><b>{{ _('조사 내용으로 작업 범위 v1을 만드세요.') }}</b> {{ _('빠진 항목이 있으면 먼저 추가 사진을 요청하세요.') }}</p>
+    <form method="post" action="/houses/{{ house.id }}/scope/from-survey"><button class="btn primary">{{ _('이 조사로 작업 범위 v{n} 만들기', n=1) }}</button></form>
+  {% elif not locked %}
+    {% set last = scopes[-1] %}
+    <p><b>{{ _('작업 범위 v{n}을 확인하고 확정하세요.', n=last.version) }}</b> {{ _('확정해야 시공 일정을 잡을 수 있습니다.') }}</p>
+    <a class="btn primary" href="/houses/{{ house.id }}/scope/{{ last.version }}">{{ _('작업 범위 v{n} 열기', n=last.version) }}</a>
+  {% else %}
+    <p><b>{{ _('작업 범위 v{n} 확정됨.', n=locked.version) }}</b> {{ _('필수 자료를 올리고 시공 일정을 잡으세요.') }}</p>
+    <div class="row wrap">
+      <a class="btn primary" href="/houses/{{ house.id }}#book">{{ _('+ 방문 예약') }}</a>
+      <a class="btn" href="/houses/{{ house.id }}/docs">{{ _('자료함') }}</a>
+    </div>
+  {% endif %}
+</section>
 {% if survey.status == 'draft' %}<div class="flash flash-warn">{{ _('설치업자가 아직 회사로 보내지 않은 조사입니다. 작성 중인 내용이 보입니다.') }}</div>{% endif %}
 
 <div class="review-grid">
@@ -63,7 +93,7 @@
     <section class="card"><h2>{{ _('설치업자 메모') }}</h2><p class="body">{{ common.memo }}</p></section>
     {% endif %}
     <section class="card">
-      <h2>{{ _('다음 할 일') }}</h2>
+      <h2>{{ _('진행 순서') }}</h2>
       <ol class="muted small steps-list">
         <li>{{ _('용량이 빠지거나 미정인 방은 추가 사진·확인을 요청합니다.') }}</li>
         <li>{{ _('LATS로 설계한 뒤 작업 범위 v1을 만들고, 최종 모델·용량으로 고칩니다.') }}</li>

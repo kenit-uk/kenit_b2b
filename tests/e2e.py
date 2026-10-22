@@ -6,7 +6,7 @@ from app.main import app
 
 with TestClient(app):
     pass
-from testdb import db
+from testdb import db, set_stage
 
 codes = dict(db.execute("select key, value from settings"))
 sc, ic = codes["invite_code_staff"], codes["invite_code_installer"]
@@ -70,14 +70,13 @@ qfile = db.execute("select a.id from attachments a join entries e on e.id=a.entr
 assert inst.get(f"/files/{qfile}").status_code == 404                                       # 견적서 파일도 불가
 r = ok(staff.get(f"/houses/{hid}")); assert "화요일 설치" in r.text and "2026-10-10 (토) 14:30" in r.text
 
-# 단계 변경 (회사만)
-assert inst.post(f"/houses/{hid}/stage", data=dict(stage="3")).status_code == 403
-r = ok(staff.post(f"/houses/{hid}/stage", data=dict(stage="4", note="견적 발송"), follow_redirects=True))
-assert "4단계 &#39;최종 확정&#39;(으)로 옮겼습니다." in r.text
-assert staff.post(f"/houses/{hid}/stage", data=dict(stage="10")).status_code == 400
-r = ok(staff.get(f"/houses/{hid}?tab=status")); assert "1. 현장조사 예약 → 4. 최종 확정" in r.text and "견적 발송" in r.text
+# 단계는 직접 바꿀 수 없다 (진행 상황에 따라 자동)
+assert staff.post(f"/houses/{hid}/stage", data=dict(stage="4")).status_code in (404, 405)
+assert "자동으로 바뀝니다" in staff.get(f"/houses/{hid}").text
+set_stage(hid, 3, "s@ex.com")
+r = ok(staff.get(f"/houses/{hid}?tab=status")); assert "1. 현장조사 → 3. 시공 준비" in r.text
 r = ok(inst.get(f"/houses/{hid}"))
-assert 'class="stagebar' in r.text and "최종 확정" in r.text                                # 설치업자도 진행 단계는 봄
+assert 'class="stagebar' in r.text and "시공 준비" in r.text                                # 설치업자도 진행 단계는 봄
 assert 'action="/houses/' + str(hid) + '/stage"' not in r.text                             # 단계 이동 버튼은 없음
 # 보류
 ok(staff.post(f"/houses/{hid}/hold", data=dict(note="고객 휴가")))
@@ -121,11 +120,11 @@ assert count(staff, "?q=NW16XE") == 1          # 우편번호 공백 무시
 assert count(staff, "?q=900001") == 1          # 관리자: 연락처 검색
 assert count(inst, "?q=900001") == 0           # 설치업자: 연락처 검색 불가
 assert count(staff, f"?q=WS-{100000 + hid}") == 1   # 관리번호 검색
-assert count(staff, "?stage=4") == 1
-assert count(staff, "?stage=4&stage=1") == 2
-r = ok(staff.get("/houses?stage=4"))
-assert '<input type="hidden" name="stage" value="4">' in r.text
-assert count(staff, "?stage=4&q=London") == 1   # 칩 단계 + 키워드 검색 유지
+assert count(staff, "?stage=3") == 1
+assert count(staff, "?stage=3&stage=1") == 2
+r = ok(staff.get("/houses?stage=3"))
+assert '<input type="hidden" name="stage" value="3">' in r.text
+assert count(staff, "?stage=3&q=London") == 1   # 칩 단계 + 키워드 검색 유지
 assert count(staff, "?stage=1&q=Baker") == 0
 staff.post(f"/houses/{other}/hold")
 assert count(staff, "?hold=1") == 1 and count(inst, "?hold=1") == 0
@@ -148,31 +147,31 @@ inst.post("/login", data=dict(email="i@ex.com", password="pass1234"))
 ok(inst.get("/lang/en?next=/houses"))
 assert db.execute("select lang from users where id=?", (iid,)).fetchone()[0] == "en"
 r = ok(inst.get(f"/houses/{hid}"))
-for s_ in ["Site survey", "Scope agreed", "Stage 4 of 9", "Floor area", "90 ㎡", "Terraced", "1 edit(s)", "History", "People on this project", "Activity log", "Scope versions"]:
+for s_ in ["Site survey", "Ready to install", "Stage 3 of 6", "Floor area", "90 ㎡", "Terraced", "1 edit(s)", "History", "Assigned installers", "Scope versions"]:
     assert s_ in r.text, s_
-assert "Save Site survey" not in r.text            # 예전 기록 입력란은 설치업자에게 숨김 (구조화된 현장조사를 씀)
+assert "Save Site notes" not in r.text            # 예전 기록 입력란은 설치업자에게 숨김 (구조화된 현장조사를 씀)
 r = ok(inst.get(f"/houses/{hid}?tab=history"))
-for s_ in ["Stage changed", "1. Survey booking → 4. Scope agreed", "Record edited", "File removed", "Changed: Landlord phone", "Before edit", "On hold", "Resume"]:
+for s_ in ["Stage changed", "1. Site survey → 3. Ready to install", "Record edited", "File removed", "Changed: Landlord phone", "Before edit", "On hold", "Resume"]:
     assert s_ in r.text, s_
 r = ok(inst.get(f"/houses/{hid}?q=없는기록")); assert "No records match &#39;없는기록&#39;" in r.text   # 검색어는 번역 안 함
-r = ok(inst.get("/houses?stage=4"))
-assert "1 result(s)" in r.text and "Scope agreed" in r.text and "My jobs" in r.text
+r = ok(inst.get("/houses?stage=3"))
+assert "1 result(s)" in r.text and "Ready to install" in r.text and "Projects" in r.text
 r = ok(inst.post(f"/houses/{hid}/entries/survey", data=dict(body="x"), files=[("files", ("a.svg", b"<svg/>", "image/svg+xml"))]))
 assert "&#39;a.svg&#39; can&#39;t be uploaded" in r.text
-r = ok(inst.post(f"/houses/{hid}/entries/survey", data=dict(rooms="4"))); assert "Site survey saved." in r.text
+r = ok(inst.post(f"/houses/{hid}/entries/survey", data=dict(rooms="4"))); assert "Site notes saved." in r.text
 assert "You don&#39;t have permission" in inst.get("/users").text
 # 로그아웃 후에도 언어 유지, 재로그인 시 계정 언어 적용
 inst.post("/logout"); assert "Log in" in inst.get("/login").text
 k = TestClient(app, headers={"Accept-Language": "ko"}); k.post("/login", data=dict(email="i@ex.com", password="pass1234"))
-assert "My jobs" in k.get("/houses").text
+assert "Projects" in k.get("/houses").text
 # 관리자 화면 영어 + 날짜 형식
 staff.get("/lang/en")
 r = ok(staff.get(f"/houses/{hid}")); assert "Landlord contact" in r.text and "Phone call" in r.text
 assert re.search(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d+ \w{3} \d{4}, \d\d:\d\d", r.text)
-r = ok(staff.post(f"/houses/{hid}/stage", data=dict(stage="6"))); assert "Moved to stage 6: &#39;First fix&#39;." in r.text
+set_stage(hid, 4, "s@ex.com"); r = ok(staff.get(f"/houses/{hid}")); assert "Stage 4 of 6" in r.text
 # 배정 해제 → 다시 안 보임
 r = ok(staff.post(f"/houses/{hid}/members/{iid}/remove", follow_redirects=True)); assert "Their records are kept" in r.text
 assert k.get(f"/houses/{hid}").status_code == 404 and k.get(f"/files/{att[0][0]}").status_code == 404   # k = 로그인한 설치업자
 inv = ok(staff.get("/invites")).text
-assert "For Installer" in inv and "For Admin" in inv and "Staff" not in inv
+assert "For Installer" in inv and "For Admin" in inv and "For Staff" not in inv
 print("ALL OK")

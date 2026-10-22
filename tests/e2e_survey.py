@@ -106,7 +106,7 @@ data = json.loads(db.execute("select data from scope_versions where house_id=? a
 assert [x["name"] for x in data["rooms"]] == ["거실", "침실 1"] and data["rooms"][0]["acc"]["controls"] == ["app", "lcd"]
 assert data["rooms"][1]["acc"]["hatch"] == "need" and data["common"]["electric_work"] == "need" and data["odus"][0]["mount"] == "bracket"
 assert db.execute("select status from surveys").fetchone()[0] == "reviewed"
-assert db.execute("select stage from houses where id=?", (hid,)).fetchone()[0] == 3     # 견적·범위 협의 단계로
+assert db.execute("select stage from houses where id=?", (hid,)).fetchone()[0] == 2     # 견적·범위 협의 단계로
 page = dave.get(f"/houses/{hid}/scope/1").text
 assert "작업 범위" in page and "가격이 들어가지 않습니다" in page and "£" not in page
 assert sam.get(f"/houses/{hid}/scope/1").status_code == 404
@@ -121,4 +121,36 @@ assert db.execute("select max(version) from scope_versions where house_id=?", (h
 dave.get("/lang/en")
 page = dave.get(f"{B}/rooms/{room1}").text
 assert "Approx. capacity" in page and "Wall mounted" in page and "Room 1 of 2" in page
+dave.get("/lang/ko")
+
+# 관리자 설정: 현장조사 항목 (액세서리·부가 사항)
+assert dave.get("/settings/survey").status_code == 403
+page = admin.get("/settings/survey").text
+assert 'name="c0_ko"' in page and 'name="inew_ko"' in page
+form = {"c0_ko": "앱 (Wi-Fi)", "c0_active": "1", "c1_ko": "리모컨", "c1_active": "1", "c2_ko": "벽부착 LCD", "c2_active": "1",
+        "cnew_ko": "스마트 온도조절기", "cnew_en": "Smart thermostat",
+        "l0_ko": "화이트", "l0_active": "1", "l1_ko": "블랙", "l1_active": "1",
+        "i0_ko": "그릴 (Grille)", "i1_ko": "플레넘 (Plenum)", "i1_active": "1", "i2_ko": "점검구 (Access hatch)", "i2_active": "1",   # 그릴 숨김
+        "inew_ko": "배수 펌프", "inew_en": "Condensate pump", "inew_answers": "need", "inew_def_wall": "na",
+        "enew_ko": "콘센트 추가"}
+admin.post("/settings/survey", data=form)
+import json as _json
+saved = _json.loads(db.execute("select value from settings where key='survey_options'").fetchone()[0])
+pump = saved["items"][-1]
+assert pump["ko"] == "배수 펌프" and pump["answers"] == "need" and pump["defaults"]["wall"] == "na" and pump["defaults"]["ducted"] is None
+assert [c["ko"] for c in saved["controls"]][-1] == "스마트 온도조절기" and not saved["items"][0]["active"]
+# 새 현장조사에 바로 반영: 그릴은 안 보이고, 배수 펌프·온도조절기·빠른 선택이 보임
+r = admin.post("/houses/new", data=dict(address="9 Options Road"), follow_redirects=True)
+h2 = int(re.search(r"/houses/(\d+)", str(r.url)).group(1))
+admin.post(f"/houses/{h2}/members", data=dict(user_id=uid("d@ex.com")))
+dave.post(f"/houses/{h2}/survey/start")
+rid = db.execute("select r.id from survey_rooms r join surveys s on s.id=r.survey_id where s.house_id=?", (h2,)).fetchone()[0]
+dave.post(f"/houses/{h2}/survey/rooms/{rid}", data=dict(name="거실", indoor_type="ducted", kw="3.5", action="stay"))
+page = dave.get(f"/houses/{h2}/survey/rooms/{rid}/acc").text
+assert "배수 펌프" in page and "스마트 온도조절기" in page and "+ 콘센트 추가" in page and "그릴 (Grille)" not in page
+key = pump["key"]
+dave.post(f"/houses/{h2}/survey/rooms/{rid}/acc", data={"plenum": "incl", "hatch": "need", key: "need", "action": "stay"})
+acc = _json.loads(db.execute("select acc from survey_rooms where id=?", (rid,)).fetchone()[0])
+assert acc.get(key) == "need"
+assert "배수 펌프" in admin.get(f"/houses/{h2}/survey").text                                   # 회사 검토에도 보임
 print("SURVEY OK")

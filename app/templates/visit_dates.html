@@ -3,7 +3,7 @@
 {% block title %}{{ _('언제 방문할 수 있나요?') }}{% endblock %}
 {% set WD = ['월','화','수','목','금','토','일'] %}
 {% block content %}
-{{ s.flow_head('/today', visit.address.split(',')[0] ~ ' · ' ~ (visit.postcode or ''), _('언제 방문할 수 있나요?')) }}
+{{ s.flow_head('/houses', visit.address.split(',')[0] ~ ' · ' ~ (visit.postcode or ''), _('언제 방문할 수 있나요?')) }}
 <p>{{ _('가능한 날짜 2~3일을 누르세요. 회사가 고객과 통화해 하루를 확정합니다.') }}</p>
 
 <form method="post" action="/visits/{{ visit.id }}/dates" id="dates-form">

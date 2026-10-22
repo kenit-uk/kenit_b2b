@@ -58,7 +58,8 @@ r = admin.post("/invites/phone", data=dict(name="Dup", phone="+447700900555", ro
 assert "이미 등록된 번호입니다" in r.text
 assert mgr.post("/invites/phone", data=dict(name="X", phone="07700 900111", role="staff")).status_code == 403   # 매니저는 관리자 등록 불가
 assert mgr.post("/invites/phone", data=dict(name="Mgr2", phone="07700 900112", role="manager"), follow_redirects=True).status_code == 200
-assert "SMS" in admin.get("/users").text and "+44 7700 900555" in admin.get("/users").text
+page = admin.get("/users/installers").text + admin.get("/users/staff").text
+assert "SMS" in page and "+44 7700 900555" in page
 
 # 문자 로그인
 dave = ko(); dave.get("/lang/ko")

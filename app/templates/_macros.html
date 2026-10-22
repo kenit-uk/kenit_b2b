@@ -8,11 +8,11 @@
 {%- if house.on_hold %} <span class="hold-badge">{{ _('보류') }}</span>{% endif %}
 {%- endmacro %}
 
-{# 9단계 진행 표시줄 #}
+{# 단계 진행 표시줄 #}
 {% macro stage_bar(house) %}
-<div class="stagebar{% if house.on_hold %} on-hold{% endif %}" aria-label="{{ _('{n}단계 중 {i}단계', n=9, i=house.stage) }}">
+<div class="stagebar{% if house.on_hold %} on-hold{% endif %}" aria-label="{{ _('{n}단계 중 {i}단계', n=STAGES|length, i=house.stage) }}">
   <div class="stagebar-head">
-    <span class="muted small">{{ _('{n}단계 중 {i}단계', n=9, i=house.stage) }}</span>
+    <span class="muted small">{{ _('{n}단계 중 {i}단계', n=STAGES|length, i=house.stage) }}</span>
     <b>{{ _(STAGES[house.stage]) }}</b>{% if house.on_hold %} <span class="hold-badge">{{ _('보류') }}</span>{% endif %}
   </div>
   <ol>
@@ -38,6 +38,31 @@
     {{ _(ENTRY_TYPES[et]) }}{% if h.detail and h.detail != '0' %} ({{ _('첨부 {n}개', n=h.detail) }}){% endif %}
   {%- elif h.action == 'entry_edit' -%}
     {{ _(ENTRY_TYPES[et]) }}
+  {%- elif h.action in ('scope_create', 'scope_ack', 'scope_lock', 'scope_comment') and (h.detail or '').isdigit() -%}
+    v{{ h.detail }}
+  {%- elif h.action == 'variation_decide' and ':' in (h.detail or '') -%}
+    {%- set p = h.detail.split(':') -%}{{ p[0] }} · {{ _(VARIATION_STATUS.get(p[1].strip(), p[1])) }}
+  {%- elif h.action in ('arrive', 'finish') and h.detail in VISIT_KINDS -%}
+    {{ _(VISIT_KINDS[h.detail]) }}
+  {%- elif h.action == 'payment' and ':' in (h.detail or '') -%}
+    {%- set p = h.detail.split(':') -%}{{ _(PAYMENT_KINDS.get(p[0], p[0])) }} · {{ _(PAYMENT_STATUS.get(p[1], p[1])) }}
+  {%- elif h.action == 'review' -%}
+    {{ _({'report': '작업 끝 보고', 'message': '현장 메시지', 'variation': '변경 요청'}.get(h.detail, h.detail or '')) }}
+  {%- elif (h.detail or '').startswith('{') -%}
+    {#- 방문·현장조사 기록은 JSON으로 저장됨 → 읽기 쉬운 문장으로 -#}
+    {%- set d = h.detail|fromjson -%}
+    {%- set parts = [] -%}
+    {%- if d.kind -%}{%- set _x = parts.append(_(d.seq ~ '차 시공') if d.kind == 'install' and d.seq else _(VISIT_KINDS.get(d.kind, d.kind))) -%}{%- endif -%}
+    {%- if d.get('from') and d.date -%}{%- set _x = parts.append(d['from'] ~ ' → ' ~ d.date) -%}
+    {%- elif d.date -%}{%- set _x = parts.append(d.date) -%}
+    {%- elif 'date' in d and d.mode == 'requested' -%}{%- set _x = parts.append(_('날짜는 설치업자가 고름')) -%}{%- endif -%}
+    {%- if d.installer -%}{%- set _x = parts.append(d.installer) -%}{%- endif -%}
+    {%- if d.mode and d.mode != 'requested' -%}{%- set _x = parts.append(_(VISIT_STATUS.get(d.mode, d.mode))) -%}{%- endif -%}
+    {%- if d.status -%}{%- set _x = parts.append(_(VISIT_STATUS.get(d.status, d.status))) -%}{%- endif -%}
+    {%- if d.answer -%}{%- set _x = parts.append(_('가능') if d.answer == 'yes' else _('불가')) -%}{%- endif -%}
+    {%- if d.rooms is defined -%}{%- set _x = parts.append(_('방 {r}개 · 사진 {p}장', r=d.rooms, p=d.photos or 0)) -%}{%- endif -%}
+    {%- if d.override -%}{%- set _x = parts.append(_('경고 무시 사유: {reason}', reason=d.override)) -%}{%- endif -%}
+    {{ parts|join(' · ') }}
   {%- else -%}
     {{ h.detail or '' }}
   {%- endif -%}
@@ -58,7 +83,7 @@
       <label>{{ _('층수 / 해당 층') }} <input name="floors" value="{{ v.floors or '' }}" placeholder="{{ _('예: 2층 건물 / 3층') }}"></label>
       <label>{{ _('설치 희망 대수·위치') }} <input name="units_wanted" value="{{ v.units_wanted or '' }}" placeholder="{{ _('예: 거실1, 안방1') }}"></label>
     </div>
-    <label>{{ _('집 구조·현장 메모') }} <textarea name="body" rows="5" placeholder="{{ _('배관 경로, 실외기 위치, 전기 용량, 벽 재질, 주차/출입 등') }}">{{ v.body or '' }}</textarea></label>
+    <label>{{ _('건물 구조·메모') }} <textarea name="body" rows="5" placeholder="{{ _('배관 경로, 실외기 위치, 전기 용량, 벽 재질, 주차/출입 등') }}">{{ v.body or '' }}</textarea></label>
   {% elif type == 'quote' %}
     <div class="grid-2">
       <label>{{ _('견적 금액 (£)') }} <input name="amount" inputmode="decimal" value="{{ v.amount or '' }}" placeholder="{{ _('예: 3,450') }}"></label>
@@ -169,3 +194,75 @@ data-upload data-direct="{{ 1 if DIRECT_UPLOAD else 0 }}" data-upload-url="/hous
     </tbody>
   </table>
 {% endmacro %}
+
+{# '다음 할 일' 상자 — app/nextstep.py 가 정한 한 가지 #}
+{% macro next_step_box(ns, compact=False) -%}
+{%- set a = {} -%}{%- for k, v in ns.args.items() -%}{%- set _x = a.update({k: _(v) if v is string else v}) -%}{%- endfor -%}
+<section class="card next-step {{ 'is-waiting' if ns.waiting else '' }}" id="next-step">
+  <span class="sec-label">{{ _('다음 할 일') }}</span>
+  <p><b>{{ _(ns.key, **a) }}</b></p>
+  {% if ns.actions %}
+  <div class="row wrap">
+    {% for act in ns.actions %}
+      {% if act.href %}<a class="btn {{ 'primary' if act.primary else '' }}" href="{{ act.href }}">{{ _(act.label, **act.args) }}</a>
+      {% else %}<form method="post" action="{{ act.post }}">{% for fk, fv in act.fields.items() %}<input type="hidden" name="{{ fk }}" value="{{ fv }}">{% endfor %}<button class="btn {{ 'primary' if act.primary else '' }}">{{ _(act.label) }}</button></form>{% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{%- endmacro %}
+
+{# 확인할 일 목록 등 한 줄짜리 #}
+{% macro next_step_text(ns) -%}
+{%- set a = {} -%}{%- for k, v in ns.args.items() -%}{%- set _x = a.update({k: _(v) if v is string else v}) -%}{%- endfor -%}
+{{ _(ns.key, **a) }}
+{%- endmacro %}
+
+
+{# ISO 날짜 → '10월 22일 (목)' #}
+{% macro day(iso) -%}
+{%- set WDS = ['월','화','수','목','금','토','일'] -%}{%- set d = iso|todate -%}
+{{ _('{m}월 {d}일 ({w})', m=d.month, d=d.day, w=_(WDS[d.weekday()])) }}
+{%- endmacro %}
+
+{# 결제 한 칸: 금액 + 상태 (보기만. 고치는 건 프로젝트마다 하나인 '수정' 창에서) #}
+{% macro pay_cell(p, amount) -%}
+{%- set st = p.status if p else 'not_due' -%}
+<div class="pay-cell st-{{ st }}">
+  {% if amount %}<b class="pay-amt">£{{ amount|money }}</b>{% else %}<span class="muted">—</span>{% endif %}
+  {% if amount %}<span class="tag {{ 'ok' if st == 'received' else 'warn' if st == 'invoiced' else '' }}">{{ _(PAYMENT_STATUS[st]) }}{% if st == 'received' and p.received_on %} {{ p.received_on[5:] }}{% elif st == 'invoiced' and p.invoiced_on %} {{ p.invoiced_on[5:] }}{% endif %}</span>{% endif %}
+</div>
+{%- endmacro %}
+
+{# 결제 수정 창 (프로젝트마다 하나): 총액·계약금·중도금 → 잔금 자동, 세 결제의 상태·날짜 #}
+{% macro pay_modal(house, sm, back) -%}
+<button type="button" class="btn small" onclick="document.getElementById('pay-{{ house.id }}').showModal()">{{ _('수정') }}</button>
+<dialog class="modal pay-modal" id="pay-{{ house.id }}" onclick="if (event.target === this) this.close()">
+  <div class="q-head"><div><h2>{{ _('결제') }}</h2><p class="muted small">{{ house.ref_no }} · {{ house.address.split(',')[0] }}</p></div>
+    <form method="dialog"><button class="btn small" aria-label="{{ _('닫기') }}">✕</button></form></div>
+  <form method="post" action="/houses/{{ house.id }}/payments" class="stack pay-form">
+    <input type="hidden" name="back" value="{{ back }}">
+    <div class="grid-3">
+      <label>{{ _('총 계약 금액 (£)') }}<input name="total" inputmode="decimal" value="{{ sm.total|money if sm.total is not none else '' }}" placeholder="4,800"></label>
+      <label>{{ _('계약금 (£)') }}<input name="deposit_amount" inputmode="decimal" value="{{ sm.amount.deposit|money if sm.amount.deposit else '' }}" placeholder="1,200"></label>
+      <label>{{ _('중도금 (£)') }}<input name="interim_amount" inputmode="decimal" value="{{ sm.amount.interim|money if sm.amount.interim else '' }}" placeholder="2,000"></label>
+    </div>
+    <p class="pay-balance">{{ _('잔금 (자동)') }}: <b data-balance>—</b></p>
+    <table class="pay-status-table">
+      <thead><tr><th></th><th>{{ _('상태') }}</th><th>{{ _('청구일') }}</th><th>{{ _('받은 날') }}</th></tr></thead>
+      <tbody>
+      {% for k, lab in PAYMENT_KINDS.items() %}{% set p = sm.pays[k] %}{% set st = p.status if p else 'not_due' %}
+        <tr>
+          <th>{{ _(lab) }}</th>
+          <td><select name="{{ k }}_status">{% for sk, sl in PAYMENT_STATUS.items() %}<option value="{{ sk }}" {% if sk == st %}selected{% endif %}>{{ _(sl) }}</option>{% endfor %}</select></td>
+          <td><input type="date" name="{{ k }}_invoiced_on" value="{{ p.invoiced_on if p and p.invoiced_on else '' }}"></td>
+          <td><input type="date" name="{{ k }}_received_on" value="{{ p.received_on if p and p.received_on else '' }}"></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted small">{{ _('청구함·받음은 금액이 있는 결제만 고를 수 있습니다. 날짜를 비워 두면 오늘로 기록됩니다.') }}</p>
+    <button class="btn primary">{{ _('저장') }}</button>
+  </form>
+</dialog>
+{%- endmacro %}

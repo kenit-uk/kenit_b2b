@@ -2,7 +2,7 @@
 
 - 회사가 도면·평면도·LATS·카탈로그·협의 기록을 올린다. 같은 자료의 새 버전은 group_id로 묶는다.
 - 설치업자는 최신 버전에 NEW 표시를 보고, 열어서 '확인함'을 누른다(버전별 기록 → "도면을 못 봤다" 다툼 방지).
-- 1차 시공 전 필수 자료 3종(건물 도면, 제품 카탈로그·사양서, 최종 LATS)이 다 있어야 1차 시공을 예약할 수 있다.
+- 시공 전 필수 자료 3종(건물 도면, 제품 카탈로그·사양서, 최종 LATS)이 다 있어야 시공을 예약할 수 있다.
 - 가격 문서(견적서·인보이스)는 올리지 않는다.
 """
 from fastapi import APIRouter, Depends, Request
@@ -36,7 +36,7 @@ def required_status(docs) -> dict:
 
 
 def install_pack_ready(conn, house_id: int) -> bool:
-    """1차 시공 예약 관문: 필수 자료 3종이 모두 올라와 있는가."""
+    """시공 예약 관문: 필수 자료 3종이 모두 올라와 있는가."""
     cats = {r["category"] for r in conn.execute(
         "SELECT DISTINCT category FROM documents WHERE house_id = ? AND removed_at IS NULL", (house_id,))}
     return all(k in cats for k in C.REQUIRED_DOCS)
@@ -63,7 +63,7 @@ def doc_or_404(conn, house_id: int, doc_id: int):
 def check_not_price(title: str, filename: str) -> None:
     low = f"{title} {filename}".lower()
     if any(w in low for w in C.PRICE_WORDS):
-        raise UserError("가격 문서(견적서·인보이스)는 자료함에 올릴 수 없습니다. 회사 전용 견적 기록에 남기세요.")
+        raise UserError("가격 자료(견적서·인보이스)는 자료함에 올릴 수 없습니다. 회사 전용 견적 기록에 남기세요.")
 
 
 @router.get("/houses/{house_id}/docs")

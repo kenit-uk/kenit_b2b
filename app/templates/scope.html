@@ -70,7 +70,11 @@
     <button class="btn block">🔒 {{ _('이 버전으로 확정') }}</button></form>
   {% endif %}
   {% else %}
-  <p class="muted small center">{{ _('확정된 작업 범위는 변경 요청(VO)으로만 바꿀 수 있습니다.') }}</p>
+  <p class="muted small center">{{ _('확정된 작업 범위는 변경 요청(VO)으로만 바꿀 수 있습니다.') }} <a href="/houses/{{ house.id }}/variations">{{ _('변경 요청 보기') }} ›</a></p>
+  <div class="row wrap center-row">
+    <a class="btn primary" href="/houses/{{ house.id }}#next-step">{{ _('다음 할 일 보기') }}</a>
+    <a class="btn" href="/houses/{{ house.id }}/docs">{{ _('자료함') }}</a>
+  </div>
   {% endif %}
 </div>
 {% else %}

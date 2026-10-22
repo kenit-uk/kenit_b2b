@@ -1,31 +1,32 @@
-{% extends "base.html" %}
-{% block title %}{{ _('오늘 할 일') }} · {{ BRAND }}{% endblock %}
+{# 설치업자 '프로젝트' 화면 위쪽: 오늘 할 일·답할 것·다가오는 일정 (houses.html 에서 include) #}
 {% set WD = ['월','화','수','목','금','토','일'] %}
-{% block content %}
-<div class="today-head">
-  <div>
-    <p class="muted small">{{ _('{m}월 {d}일 ({w})', m=today.month, d=today.day, w=_(WD[today.weekday()])) }}</p>
-    <h1>{{ _('안녕하세요, {name}', name=user.name) }}</h1>
-  </div>
-</div>
-
-<h2 class="section-title">{{ _('오늘') }}</h2>
+<h2 class="section-title">{{ _('오늘 할 일') }} <span class="muted small">{{ _('{m}월 {d}일 ({w})', m=today.month, d=today.day, w=_(WD[today.weekday()])) }}</span></h2>
 {% for v in todays %}
 <article class="card task-card {% if v.status != 'done' %}main{% endif %}">
-  <div class="task-top"><span class="tag warn">{% if v.start_time %}{{ v.start_time }} · {% endif %}{{ _('할 일') if v.status != 'done' else _('작업 끝') }}</span><span class="muted small">{{ _(C.VISIT_KINDS[v.kind]) }}</span></div>
-  <h3>{{ v.address.split(',')[0] }}</h3>
+  <div class="task-top"><span class="tag warn">{% if v.start_time %}{{ v.start_time }} · {% endif %}{{ _('할 일') if v.status != 'done' else _('작업 끝') }}</span><span class="muted small">{{ _(vlabel(v)) }}</span></div>
+  <h3>{{ v.address.split(',')[0] }}{% if v.on_hold %} <span class="tag bad">{{ _('보류') }}</span>{% endif %}</h3>
+  {% if v.on_hold %}<p class="small err-text">{{ _('회사가 이 프로젝트를 보류했습니다. 회사에서 연락이 올 때까지 작업하지 마세요.') }}</p>{% endif %}
   <p class="muted small">{{ v.postcode or '' }}{% if rooms[v.id] %} · {{ _('실내기 {n}대', n=rooms[v.id]) }}{% endif %}</p>
   <a class="small" href="/houses/{{ v.house_id }}/docs">{{ _('도면·사양서·LATS — 열기') }}</a>
   {% if v.status == 'done' %}
-    <a class="btn block" href="/visits/{{ v.id }}">{{ _('보고 내용 보기') }}</a>
+    <a class="btn block" href="/visits/{{ v.id }}">{{ _('작업 끝 보고 보기') }}</a>
   {% elif v.arrived_at %}
-    <a class="btn primary block" href="/visits/{{ v.id }}">{{ _('현장 화면 열기') }}</a>
+    <a class="btn primary block" href="/visits/{{ v.id }}">{{ _('현장 기록 열기') }}</a>
   {% else %}
     <form method="post" action="/visits/{{ v.id }}/arrive" class="arrive-form">
       <input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="accuracy">
       <button class="btn primary block">📍 {{ _('현장 도착') }}</button>
     </form>
   {% endif %}
+</article>
+{% endfor %}
+
+{% for v in missed %}
+<article class="card task-card main">
+  <div class="task-top"><span class="tag bad">{{ _('보고 안 보냄') }}</span><span class="muted small">{{ v.date }} · {{ _(vlabel(v)) }}</span></div>
+  <h3>{{ v.address.split(',')[0] }}</h3>
+  <p class="muted small">{{ _('이 방문의 작업 끝 보고가 아직 없습니다.') }}</p>
+  <a class="btn primary block" href="/visits/{{ v.id }}/finish">{{ _('오늘 작업 끝 보내기') }}</a>
 </article>
 {% endfor %}
 
@@ -42,8 +43,8 @@
 <article class="card task-card">
   <div class="task-top"><span class="tag warn">{{ _('할 일') }}</span><span class="muted small">{{ _('날짜 선택 필요') }}</span></div>
   <h3>{{ v.address.split(',')[0] }}</h3>
-  <p class="muted small">{{ v.postcode or '' }} · {{ _(C.VISIT_KINDS[v.kind]) }} {{ _('방문') }}</p>
-  <a class="btn soft block" href="/visits/{{ v.id }}/dates">{{ _('가능한 날짜 2~3개 고르기') }}</a>
+  <p class="muted small">{{ v.postcode or '' }} · {{ _(vlabel(v)) }} {{ _('방문') }}</p>
+  <a class="btn soft block" href="/visits/{{ v.id }}/dates">{{ _('가능한 날짜 고르기') }}</a>
 </article>
 {% endfor %}
 
@@ -54,15 +55,22 @@
   <span class="btn soft">{{ _('보기') }}</span>
 </a>
 {% endfor %}
-{% if docs %}
-<a class="card task-card row-card" href="/houses/{{ docs[0].house_id }}/docs">
-  <div><div class="task-top"><span class="tag new">NEW</span><span class="muted small">{{ _('새 자료 {n}개', n=docs|length) }}</span></div>
-  <h3>{{ docs[0].address.split(',')[0] }}{% if docs|length > 1 %} {{ _('외') }}{% endif %}</h3></div>
+{% for hid, d in doc_houses.items() %}
+<a class="card task-card row-card" href="/houses/{{ hid }}/docs">
+  <div><div class="task-top"><span class="tag new">NEW</span><span class="muted small">{{ _('새 자료 {n}개', n=d.n) }}</span></div>
+  <h3>{{ d.address.split(',')[0] }}</h3></div>
   <span class="btn soft">{{ _('보기') }}</span>
 </a>
-{% endif %}
+{% endfor %}
+{% for x in decisions %}
+<a class="card task-card row-card" href="/houses/{{ x.house_id }}/variations#vo-{{ x.number }}">
+  <div><div class="task-top"><span class="var-badge st-{{ x.status }}">VO-{{ x.number }} · {{ _(C.VARIATION_STATUS[x.status]) }}</span></div>
+  <h3>{{ x.address.split(',')[0] }}</h3></div>
+  <span class="btn soft">{{ _('보기') }}</span>
+</a>
+{% endfor %}
 
-{% if not (todays or surveys or date_requests or scopes or docs) %}
+{% if not (todays or missed or surveys or date_requests or scopes or docs or decisions) %}
 <div class="card empty">{{ _('오늘 할 일이 없습니다.') }}</div>
 {% endif %}
 
@@ -72,7 +80,7 @@
   {% for v in proposals %}
   <div class="up-row">
     <div><b>{{ _('{m}월 {d}일 ({w})', m=v.date[5:7]|int, d=v.date[8:]|int, w=_(WD[(v.date|todate).weekday()])) if v.date else '' }}</b>
-      <span class="muted small">{{ v.address.split(',')[0] }} · {{ _(C.VISIT_KINDS[v.kind]) }}{% if v.start_time %} · {{ v.start_time }}{% endif %}</span></div>
+      <span class="muted small">{{ v.address.split(',')[0] }} · {{ _(vlabel(v)) }}{% if v.start_time %} · {{ v.start_time }}{% endif %}</span></div>
     <form method="post" action="/visits/{{ v.id }}/reply" class="row">
       <button class="btn small primary" name="answer" value="yes">{{ _('예') }}</button>
       <button class="btn small" name="answer" value="no">{{ _('아니요') }}</button>
@@ -82,11 +90,10 @@
   {% for v in upcoming if v.status == 'confirmed' %}
   <div class="up-row">
     <div><b>{{ _('{m}월 {d}일 ({w})', m=v.date[5:7]|int, d=v.date[8:]|int, w=_(WD[(v.date|todate).weekday()])) }}</b>
-      <span class="muted small">{{ v.address.split(',')[0] }} · {{ _(C.VISIT_KINDS[v.kind]) }}{% if v.start_time %} · {{ v.start_time }}{% endif %}</span></div>
+      <span class="muted small">{{ v.address.split(',')[0] }} · {{ _(vlabel(v)) }}{% if v.start_time %} · {{ v.start_time }}{% endif %}</span></div>
     <span class="tag ok">{{ _('확정') }}</span>
   </div>
   {% endfor %}
 </div>
 {% endif %}
 <script src="/static/site.js"></script>
-{% endblock %}

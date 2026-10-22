@@ -1,12 +1,27 @@
 {% extends "base.html" %}
-{% block title %}{{ _('프로젝트') if is_office else _('내 작업') }} · {{ BRAND }}{% endblock %}
+{% block title %}{{ _('프로젝트') }} · {{ BRAND }}{% endblock %}
 {% block content %}
 {% import "_macros.html" as m with context %}
+{% if is_office %}
 <div class="page-head">
-  <h1>{{ _('프로젝트') if is_office else _('내 작업') }}</h1>
-  {% if is_office %}<a class="btn primary hide-mobile" href="/houses/new">{{ _('+ 집 등록') }}</a>{% endif %}
+  <h1>{{ _('프로젝트') }}</h1>
+  <a class="btn primary hide-mobile" href="/houses/new">{{ _('+ 새 프로젝트') }}</a>
 </div>
+{% else %}
+{# 설치업자: 맨 위 검색 → 오늘 할 일 → 내 프로젝트. 검색 중에는 결과만 보여준다 #}
+<form class="search-top" method="get" action="/houses" role="search">
+  <input type="search" name="q" value="{{ f.q }}" placeholder="{{ _('주소, 우편번호, 관리번호 검색') }}" aria-label="{{ _('검색') }}">
+  <button class="btn primary">{{ _('검색') }}</button>
+</form>
+{% if f.q %}
+<p class="muted small">{{ _('검색 결과 {n}건', n=houses|length) }} · <a href="/houses">{{ _('지우기') }}</a></p>
+{% else %}
+{% include "_today_tasks.html" %}
+<h2 class="section-title">{{ _('내 프로젝트') }} <span class="muted small">{{ houses|length }}</span></h2>
+{% endif %}
+{% endif %}
 
+{% if is_office %}
 <div class="chips">
   <a class="chip {% if not f.stage and not f.hold %}active{% endif %}" href="/houses">{{ _('전체') }} <b>{{ total }}</b></a>
   {% for n, name in STAGES.items() %}
@@ -14,7 +29,9 @@
   {% endfor %}
   <a class="chip chip-hold {% if f.hold %}active{% endif %}" href="/houses?hold=1">{{ _('보류') }} <b>{{ hold_count }}</b></a>
 </div>
+{% endif %}
 
+{% if is_office or f.stage or f.hold %}
 <form class="card filters" method="get" action="/houses">
   <div class="filter-main">
     <input type="search" name="q" value="{{ f.q }}" placeholder="{{ _('주소, 우편번호, 관리번호, 집주인 이름·연락처, 메모 검색') if is_office else _('주소, 우편번호, 관리번호 검색') }}">
@@ -28,6 +45,7 @@
   {% if f.hold %}<input type="hidden" name="hold" value="1">{% endif %}
   <p class="muted small">{{ _('검색 결과 {n}건', n=houses|length) if filtered else _('전체 {n}건', n=houses|length) }}</p>
 </form>
+{% endif %}
 
 {% if houses %}
 <div class="house-list">
@@ -42,8 +60,8 @@
       </div>
     </div>
     <div class="house-meta">
-      <span class="badges">{{ m.stage_badge(h) }}</span>
-      <span class="small muted">{% if is_office %}{{ _('현장정보 {n} · 견적 {m}', n=h.survey_count, m=h.quote_count) }}{% else %}{{ _('현장정보 {n}', n=h.survey_count) }}{% endif %}</span>
+      <span class="badges">{% if pending_by_house and pending_by_house.get(h.id) %}<span class="tag pending-tag">{{ _('확인할 일 {n}', n=pending_by_house[h.id]) }}</span>{% endif %}{{ m.stage_badge(h) }}</span>
+      {% if is_office and h.quote_count %}<span class="small muted">{{ _('견적 {m}', m=h.quote_count) }}</span>{% endif %}
       <span class="small muted">{{ _('최근 {when}', when=h.last_activity|dt) }}</span>
     </div>
   </a>
@@ -51,8 +69,8 @@
 </div>
 {% else %}
 <div class="card empty">
-  {% if filtered %}{{ _('조건에 맞는 현장이 없습니다.') }}{% else %}{{ _('아직 등록된 집이 없습니다.') }}{% endif %}
+  {% if filtered %}{{ _('조건에 맞는 프로젝트가 없습니다.') }}{% else %}{{ _('아직 등록된 프로젝트가 없습니다.') }}{% endif %}
 </div>
 {% endif %}
-{% if is_office %}<a class="fab" href="/houses/new" aria-label="{{ _('+ 집 등록') }}">＋</a>{% endif %}
+{% if is_office %}<a class="fab" href="/houses/new" aria-label="{{ _('+ 새 프로젝트') }}">＋</a>{% endif %}
 {% endblock %}
